@@ -11,6 +11,7 @@ downloads, with explicit updates and reproducible restoration from a lockfile.
 See [the design and implementation plan](docs/design.md) for distribution options,
 proposed commands, Git behavior, and acceptance criteria.
 
-The proposed first release is a Kotlin/JVM executable JAR with optional thin Unix
-and Windows launchers. Installation copies source files; Kotlin Toolchain then
-builds the plugin as an ordinary local plugin module.
+The proposed first release is a Kotlin/Native application with committed Unix
+and Windows bootstrap wrappers. Producer and client manifests describe what to
+install; a committed lockfile records the exact sources. Installation copies
+source files; Kotlin Toolchain then builds the plugin as a local plugin module.
