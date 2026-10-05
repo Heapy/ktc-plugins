@@ -1,5 +1,45 @@
 # Temporary Kotlin Toolchain plugin installer
 
+## Implemented MVP status (2026-10-04)
+
+The native shared core, platform entry points, six commands, manifests/lockfile,
+producer selection, downloaded/vendored modes, drift guards, transaction recovery,
+and release packaging are implemented. See [README.md](../README.md) for actual
+commands and [verification.md](verification.md) for measured results and boundaries.
+All four release targets compile; local execution is verified on macOS ARM64.
+Linux/Windows runtime verification is configured in CI and has not run remotely yet.
+No installer release has been published; generated release wrappers receive their
+hashes from the exact assembled binaries, while checkout wrappers support local builds.
+
+Implementation decisions refining this plan:
+
+- HTTPS uses the host `curl` executable through platform process APIs. The installer
+  itself needs no JVM, but curl is a runtime prerequisite; Git is required for index
+  and ignore inspection inside Git projects. ZIP/DEFLATE and SHA-256 are portable.
+- Dependencies are pinned to Okio 3.18.2 and kotaml 0.111.0; the latter preserves the
+  kaml AST package/API and supports the native targets. YAML edits operate on validated
+  source text so unrelated comments/settings are retained.
+- Repository symlinks outside the selected source/producer/license material are
+  inspected as archive records and never written. Selected symlinks/special files,
+  unsafe names and case collisions remain errors.
+- Project locks use the native default cache independently of archive-cache overrides.
+  Archive caches inside the project are rejected. Dry-runs may create external
+  cache/lock files but do not change project content. Windows reparse-point checks
+  protect against junctions independently of Okio metadata.
+- Metadata edits requiring unsupported anchors/flow maps fail before mutation. The
+  initial dry-run output lists changed paths and file counts rather than a unified diff.
+- Journal recovery covers process interruption and preserves later edits. It does
+  not promise complete power-loss durability; see the verification boundaries.
+- Quarkus packaging and detekt checks pass after installation on Toolchain 0.13.0
+  and their original 0.12.2 pin. Quarkus requires an app subdirectory with resources;
+  root application activation has overlapping task paths in the pinned plugin.
+  SQLDelight generation/compilation passes on 0.13.0 after the documented temporary
+  producer catalog substitution. The installer rejects its unmodified module.
+- CI assembles immutable versioned binaries/checksums and self-contained wrappers,
+  validates each runtime host, and prepares a draft release. Publishing the first
+  release is a separate maintainer action.
+
+
 ## Goal and scope
 
 Provide a small standalone tool that installs GitHub-hosted build plugin sources

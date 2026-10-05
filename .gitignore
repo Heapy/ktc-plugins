@@ -2,3 +2,4 @@
 .idea/
 build/
 .kotlin/
+__pycache__/
