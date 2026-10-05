@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Run plugin tasks in isolated consumers. SQLDelight uses a temporary producer packaging fix."""
+"""Install pinned producer manifests and run plugin tasks in isolated consumers."""
 import argparse
 import concurrent.futures
-import io
 from pathlib import Path
 import shutil
 import subprocess
-import zipfile
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,8 +41,10 @@ def consumer(name):
     shutil.copyfile(wrapper, root / 'kotlin'); (root / 'kotlin').chmod(0o755)
     return root
 
-def install(root, repository, commit, path, module="app"):
-    command(root, [str(binary), 'add', repository, '--commit', commit, '--path', path, '--license-file', 'LICENSE', '--enable-in', module, '--cache-dir', str(cache)])
+def install(root, repository, commit, selector, module="app"):
+    arguments = [str(binary), 'add', repository, '--commit', commit, '--plugin', selector, '--cache-dir', str(cache)]
+    if module is not None: arguments += ['--enable-in', module]
+    command(root, arguments)
 
 def quarkus():
     root = consumer('quarkus-app')
@@ -52,7 +52,7 @@ def quarkus():
     write(root, 'app/module.yaml', 'product: jvm/app\ndependencies:\n  - bom: io.quarkus.platform:quarkus-bom:3.39.4\n  - io.quarkus:quarkus-rest\n  - io.quarkus:quarkus-kotlin\n')
     write(root, 'app/src/example/HelloResource.kt', 'package example\n\nimport jakarta.ws.rs.GET\nimport jakarta.ws.rs.Path\n\n@Path("/hello")\nclass HelloResource {\n    @GET\n    fun hello(): String = "ok"\n}\n')
     write(root, 'app/resources/application.properties', 'quarkus.analytics.disabled=true\n')
-    install(root, 'Heapy/ktc-quarkus', '364929caf0f7ac4610ce57503815972026e9e2e6', 'plugins/quarkus')
+    install(root, 'Heapy/ktc-quarkus', 'ab131cc9ee67571bd1c09993bf6096ac27b591a0', 'quarkus')
     output = command(root, [str(root / 'kotlin'), 'do', 'quarkusBuild', '-m', 'app'])
     assert list((root / 'build').rglob('quarkus-run.jar')), output
     print('Quarkus packaging passed', flush=True)
@@ -62,7 +62,7 @@ def detekt():
     write(root, 'project.yaml', 'modules: [app]\n')
     write(root, 'app/module.yaml', 'product: jvm/lib\n')
     write(root, 'app/src/io/heapy/fixture/Greeting.kt', 'package io.heapy.fixture\n\nfun greeting(\n    name: String,\n): String = "hello $name"\n')
-    install(root, 'Heapy/detekt-config', '725afe7f30c4caadd1af3090800c1e8514adbf2a', 'plugins/heapy-detekt')
+    install(root, 'Heapy/detekt-config', '95f58d20f7fd1d2ad6c65d62c777f97af17b37c2', 'detekt')
     command(root, [str(root / 'kotlin'), 'check', '-m', 'app'])
     print('Detekt execution and config artifact resolution passed', flush=True)
 
@@ -83,29 +83,9 @@ def sql():
         assert '$libs.' not in (root / module_path / 'module.yaml').read_text()
         sql_consumer(root)
         return
-    commit = '9c98f3e33dcecff5abd354a6517d691b65b501d0'
-    archive = subprocess.run(['curl', '--disable', '--fail', '--silent', '--show-error', '--proto', '=https', '--max-time', '120', f'https://codeload.github.com/Heapy/kotgent/zip/{commit}'], capture_output=True, check=True).stdout
-    prefix = 'plugins/sqldelight-gen/'
-    with zipfile.ZipFile(io.BytesIO(archive)) as z:
-        for name in z.namelist():
-            relative = name.partition('/')[2]
-            if relative.startswith(prefix) and not name.endswith('/'):
-                assert '..' not in Path(relative).parts
-                file = root / relative; file.parent.mkdir(parents=True, exist_ok=True); file.write_bytes(z.read(name))
-    module = root / prefix / 'module.yaml'
-    replacements = {
-        '$libs.sqldelight.core': 'app.cash.sqldelight:core:2.3.2',
-        '$libs.sqldelight.sqlite.dialect': 'app.cash.sqldelight:sqlite-3-38-dialect:2.3.2',
-        '$libs.sql.psi.environment': 'app.cash.sql-psi:environment:0.7.3',
-        '$libs.sqldelight.compiler.env': 'app.cash.sqldelight:compiler-env:2.3.2',
-    }
-    # Resolve only these known catalog pins in the temporary fixture, never upstream sources.
-    text = module.read_text()
-    for alias, coordinate in replacements.items():
-        assert text.count(alias) == 1
-        text = text.replace(alias, coordinate)
-    assert '$libs.' not in text
-    module.write_text(text)
+    install(root, 'Heapy/kotgent', '2a000743c6e77540e959ba641b7c844f6d10871e', 'sqldelight', module=None)
+    assert (root / 'plugins/sqldelight-gen/.ktc-licenses/LICENSE').is_file()
+    command(root, [str(binary), 'verify', '--cache-dir', str(cache)])
     sql_consumer(root)
 
 def sql_consumer(root):
@@ -115,7 +95,7 @@ def sql_consumer(root):
     output = command(root, [str(root / 'kotlin'), 'build', '-m', 'sqldelight'])
     # Root module name is its directory basename; generated sources compile with consumer dependencies.
     assert list((root / 'build').rglob('KotgentDatabase.kt')), output
-    packaging = 'local self-contained producer' if args.sql_producer_dir else 'temporary literal coordinates'
+    packaging = 'local self-contained producer' if args.sql_producer_dir else 'installed producer manifest'
     print(f'SQLDelight generation and generated-source compilation passed with {packaging}', flush=True)
 
 failures = []

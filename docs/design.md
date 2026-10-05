@@ -21,10 +21,12 @@ The current source tree implements the next version; 0.2.0 publication is separa
   function used for downloaded archives. It is offline, read-only and does not execute
   plugin tasks. In Git repositories it respects the candidate file set from the index
   and nonignored untracked files; it does not mistake ignored build state for payload.
-- Producer manifests are prepared locally in Quarkus, detekt-config and kotgent.
+- Producer manifests are published in draft PRs for [Quarkus](https://github.com/Heapy/ktc-quarkus/pull/2),
+  [detekt-config](https://github.com/Heapy/detekt-config/pull/2) and
+  [kotgent](https://github.com/Heapy/kotgent/pull/13).
   SQLDelight's four aliases are replaced by the same literal coordinates from the
-  audited catalog. These producer changes need their own commits/publication before
-  GitHub-ref installations can use them.
+  audited catalog. CI installs the exact producer commits through their manifests,
+  including SQLDelight, without client-side paths or catalog substitution.
 
 Client and lockfile schemas remain version 1 and preserve 0.1.0 installations.
 The sections below record the original MVP contract and pinned compatibility audit;

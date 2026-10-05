@@ -278,11 +278,12 @@ CI builds/tests every target, runs real-source installation smoke checks, packag
 exact binaries and prepares a **draft** GitHub release on a matching version tag.
 Publication is a separate maintainer step; no consumer wrapper is silently upgraded.
 
-`scripts/plugin-runtime-smoke.py BINARY` also executes Quarkus packaging, detekt checks
-and SQLDelight generation in isolated consumers. SQLDelight's unmodified pinned module
-is correctly rejected by the installer; this runtime fixture replaces only its four
-catalog aliases with the documented literal coordinates. Upstream repositories are
-not changed. Pass `--toolchain-wrapper PATH` and `--plugins quarkus detekt` to repeat
+`scripts/plugin-runtime-smoke.py BINARY` installs exact commits from the
+[producer draft PRs](docs/0.2.0.md) through their manifests and executes Quarkus packaging,
+detekt checks and SQLDelight generation/compilation in isolated consumers. SQLDelight
+uses its self-contained dependencies without fixture substitutions. The acceptance
+script also checks that its historical catalog-dependent module is rejected.
+Pass `--toolchain-wrapper PATH` and `--plugins quarkus detekt` to repeat
 those checks with the producers' 0.12.2 wrapper.
 Pass `--sql-producer-dir /path/to/kotgent` to validate and execute its adapted local
 SQLDelight producer without rewriting catalog aliases in the fixture.

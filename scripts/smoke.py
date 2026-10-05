@@ -21,8 +21,8 @@ with tempfile.TemporaryDirectory(prefix='ktc plugins smoke ') as temp:
         if (result.returncode == 0) != ok:
             raise AssertionError(result.stdout + result.stderr)
         return result
-    run('add', 'Heapy/ktc-quarkus', '--commit', '364929caf0f7ac4610ce57503815972026e9e2e6', '--path', 'plugins/quarkus', '--license-file', 'LICENSE')
-    run('add', 'Heapy/detekt-config', '--commit', '725afe7f30c4caadd1af3090800c1e8514adbf2a', '--path', 'plugins/heapy-detekt', '--license-file', 'LICENSE', '--mode', 'downloaded')
+    run('add', 'Heapy/ktc-quarkus', '--commit', 'ab131cc9ee67571bd1c09993bf6096ac27b591a0', '--plugin', 'quarkus')
+    run('add', 'Heapy/detekt-config', '--commit', '95f58d20f7fd1d2ad6c65d62c777f97af17b37c2', '--plugin', 'detekt', '--mode', 'downloaded')
     run('verify')
     assert (root / 'plugins/quarkus/.ktc-licenses/LICENSE').is_file()
     assert (root / 'plugins/heapy-detekt/.ktc-licenses/LICENSE').is_file()
@@ -43,6 +43,10 @@ with tempfile.TemporaryDirectory(prefix='ktc plugins smoke ') as temp:
     sql = run('add', 'Heapy/kotgent', '--commit', '9c98f3e33dcecff5abd354a6517d691b65b501d0', '--path', 'plugins/sqldelight-gen', '--license-file', 'LICENSE', ok=False)
     assert 'producer version catalog' in sql.stderr, sql.stdout + sql.stderr
     assert (root / 'ktc-plugins.lock.yaml').read_bytes() == inventory
+    run('add', 'Heapy/kotgent', '--commit', '2a000743c6e77540e959ba641b7c844f6d10871e', '--plugin', 'sqldelight')
+    run('verify')
+    assert (root / 'plugins/sqldelight-gen/.ktc-licenses/LICENSE').is_file()
+    inventory = (root / 'ktc-plugins.lock.yaml').read_bytes()
     producer = Path(temp) / 'producer fixture'
     shutil.copytree(root / 'plugins/quarkus', producer / 'plugins/quarkus', ignore=shutil.ignore_patterns('.ktc-licenses'))
     shutil.copyfile(root / 'plugins/quarkus/.ktc-licenses/LICENSE', producer / 'LICENSE')
