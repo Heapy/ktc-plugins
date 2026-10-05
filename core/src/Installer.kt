@@ -1,7 +1,6 @@
 package io.heapy.ktcplugins
 
 import okio.Path
-import okio.Path.Companion.toPath
 import okio.ByteString.Companion.toByteString
 
 class Installer(
@@ -97,6 +96,72 @@ class Installer(
         if (locked.keys - declarations.keys != emptySet<String>()) { report("Lockfile contains undeclared entries"); failures++ }
         if (verify) checkInstall(failures == 0 && declarations.isNotEmpty()) { "Verification failed; run status, then sync/update as appropriate" }
     }
+    fun outdated(alias: String? = null, all: Boolean = alias == null) {
+        checkInstall(!fs.exists(contained(root, ".ktc-plugins/transaction"))) { "Pending transaction; run sync for recovery" }
+        val entries = declarations(); val locked = locks()
+        matching(entries, locked)
+        for (name in selection(entries, alias, all)) {
+            val d = entries.getValue(name); val old = locked.getValue(name)
+            if (d.ref.kind == "commit") { report("$name: pinned (${old.commit})"); continue }
+            val current = remote.resolve(d.repository, d.ref)
+            report("$name: ${old.commit} -> $current (${if (current == old.commit) "up to date" else if (d.ref.kind == "tag") "tag moved; explicit ref required" else "update available"})")
+        }
+    }
+    fun remove(alias: String, disableIn: Set<String> = emptySet(), dryRun: Boolean = false) = mutation(dryRun) {
+        val entries = declarations(); val locked = locks()
+        matching(entries, locked)
+        val old = locked[alias] ?: fail("Unknown plugin: $alias")
+        verifyInstalled(old, allowMissing = true)
+        ensureOwnership(old, old)
+        val modules = projectModuleFiles(root, text("project.yaml"), locked.values.map { it.destination }.toSet())
+        val configured = modules.filterValues { file ->
+            val plugins = parseYaml(text(file) ?: fail("Missing module: $file")).map()["plugins"]
+            plugins != null && plugins !is com.charleskorn.kaml.YamlNull && old.pluginId in plugins.map()
+        }
+        disableIn.forEach { safeRelative(it, allowRoot = true) }
+        checkInstall(configured.keys == disableIn) {
+            "Plugin '${old.pluginId}' has configuration in ${configured.keys.sorted().joinToString().ifEmpty { "no modules" }}; specify exactly those modules with --disable-in (repeatable)"
+        }
+        val changes = linkedMapOf<String, Map<String, Payload>?>()
+        if (fs.exists(contained(root, old.destination))) changes[old.destination] = null
+        fun metadata(path: String, value: String) { if (text(path) != value) changes[path] = mapOf("" to Payload(value.encodeToByteArray())) }
+        metadata("ktc-plugins.yaml", removeYamlMapEntry(text("ktc-plugins.yaml")!!, "plugins", alias))
+        metadata("ktc-plugins.lock.yaml", lockYaml(locked - alias))
+        text("project.yaml")?.let { metadata("project.yaml", unregisterPlugin(it, old.destination)) }
+        for ((_, file) in configured) metadata(file, removeYamlMapEntry(text(file)!!, "plugins", old.pluginId, preserveConfiguration = true))
+        if (old.mode == "downloaded") {
+            val parent = old.destination.substringBeforeLast('/', "")
+            val ignore = if (parent.isEmpty()) ".gitignore" else "$parent/.gitignore"
+            text(ignore)?.let { metadata(ignore, removeManagedIgnore(it, old.destination.substringAfterLast('/'))) }
+        }
+        if (dryRun) reportChanges(root, changes, report) else {
+            Transaction(root).commit(changes, failAfter)
+            report("Removed $alias (${old.destination}); module configuration retained as comments")
+        }
+    }
+    fun updateWrappers(version: String, source: ReleaseSource, dryRun: Boolean = false) = mutation(dryRun) {
+        val releases = mutableMapOf<String, LauncherRelease>()
+        fun release(v: String) = releases.getOrPut(v) { source.release(v).also { validateLauncherRelease(v, it) } }
+        val next = release(version)
+        val changes = linkedMapOf<String, Map<String, Payload>>()
+        for (name in listOf("ktc-plugins", "ktc-plugins.bat")) {
+            val path = contained(root, name)
+            val wanted = next.files.getValue(name)
+            if (fs.exists(path)) {
+                val existing = fs.readBytes(path, 1024L * 1024)
+                if (existing.contentEquals(wanted.bytes) && (Platform.windows || Platform.executable(path) == wanted.executable)) continue
+                val oldVersion = launcherVersion(name, existing)
+                val official = release(oldVersion).files.getValue(name).bytes
+                checkInstall(existing.decodeToString().replace("\r\n", "\n") == official.decodeToString().replace("\r\n", "\n")) { "Modified/unrecognized launcher $name; preserve local edits before updating" }
+            }
+            changes[name] = mapOf("" to wanted)
+        }
+        if (changes.isEmpty()) { report("Launchers already at $version"); return@mutation }
+        val ignore = ignoredEntries(text(".gitignore") ?: "", listOf(".ktc-plugins"))
+        if (text(".gitignore") != ignore) changes[".gitignore"] = mapOf("" to Payload(ignore.encodeToByteArray()))
+        if (dryRun) reportChanges(root, changes, report)
+        else { Transaction(root).commit(changes, failAfter); report("Updated project launchers to $version; review and commit both files") }
+    }
     private fun verifyInstalled(l: Locked, allowMissing: Boolean = false) = verifyInstalledAt(root, l, allowMissing)
     private fun matching(declarations: Map<String, Declaration>, locked: Map<String, Locked>) {
         checkInstall(declarations.isNotEmpty() && declarations.keys == locked.keys) { "Missing/stale lock entries; use add/update to resolve declarations" }
@@ -158,9 +223,8 @@ class Installer(
             metadata(file, enablePlugin(text(file) ?: fail("No module.yaml at $module"), id))
         }
         if (changes.isEmpty()) { report("Already up to date"); return }
-        for ((path, payload) in changes) {
-            report("${if (dryRun) "Would update" else "Updating"} $path (${payload.size} ${if (payload.keys == setOf("")) "metadata file" else "files"})")
-        }
+        if (dryRun) reportChanges(root, changes, report)
+        else for ((path, payload) in changes) report("Updating $path (${payload.size} ${if (payload.keys == setOf("")) "metadata file" else "files"})")
         if (!dryRun) Transaction(root).commit(changes, failAfter)
         for (p in prepared) report("Enable in the consuming module: plugins: {${p.lock.pluginId}: enabled}")
     }

@@ -6,6 +6,7 @@ import importlib.util
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -17,7 +18,7 @@ args = p.parse_args()
 spec = importlib.util.spec_from_file_location('packager', ROOT / 'scripts/package-release.py')
 packager = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(packager)
-version = '0.1.0'
+version = re.search(r'const val VERSION = "([^"]+)"', (ROOT / 'core/src/Cli.kt').read_text()).group(1)
 windows = os.name == 'nt'
 target = 'windows-x64' if windows else ('macos-arm64' if platform.system() == 'Darwin' else ('linux-arm64' if platform.machine() in ('aarch64', 'arm64') else 'linux-x64'))
 with tempfile.TemporaryDirectory(prefix='ktc wrapper test ') as tmp:

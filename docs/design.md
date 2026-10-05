@@ -1,5 +1,35 @@
 # Temporary Kotlin Toolchain plugin installer
 
+## 0.2.0 implementation
+
+Version 0.1.0 was published on 2026-10-05 after all four runtime targets passed CI.
+The current source tree implements the next version; 0.2.0 publication is separate.
+
+- `diff` and mutation dry-runs report unified source/configuration/lockfile changes;
+  binary and large-file changes are summarized by size/digest.
+- `outdated` resolves declared moving refs without fetching archives or changing
+  installation state; pinned commits require no request. New-tag/semver discovery
+  remains outside scope, and moved tags still require explicit update acceptance.
+- `remove` uses the existing lock inventory and transaction recovery to delete only
+  pristine managed content. Exact registrations and managed ignore rules are removed;
+  shared globs and unrelated configuration remain. Explicit `--disable-in` selections
+  must cover every configured module, whose settings are retained as comments.
+- `wrapper update --version` verifies published release metadata, asset digests,
+  checksums and native pins. Official existing launchers are checked before updating;
+  local edits are refused. Both wrappers and installer-state ignoring are transactional.
+- `validate` checks producer working-tree packaging through the same preparation
+  function used for downloaded archives. It is offline, read-only and does not execute
+  plugin tasks. In Git repositories it respects the candidate file set from the index
+  and nonignored untracked files; it does not mistake ignored build state for payload.
+- Producer manifests are prepared locally in Quarkus, detekt-config and kotgent.
+  SQLDelight's four aliases are replaced by the same literal coordinates from the
+  audited catalog. These producer changes need their own commits/publication before
+  GitHub-ref installations can use them.
+
+Client and lockfile schemas remain version 1 and preserve 0.1.0 installations.
+The sections below record the original MVP contract and pinned compatibility audit;
+the 0.2.0 changes above supersede its dry-run and uninstall limitations.
+
 ## Implemented MVP status (2026-10-04)
 
 The native shared core, platform entry points, six commands, manifests/lockfile,
@@ -7,8 +37,7 @@ producer selection, downloaded/vendored modes, drift guards, transaction recover
 and release packaging are implemented. See [README.md](../README.md) for actual
 commands and [verification.md](verification.md) for measured results and boundaries.
 All four release targets compile; local execution is verified on macOS ARM64.
-Linux/Windows runtime verification is configured in CI and has not run remotely yet.
-No installer release has been published; generated release wrappers receive their
+All runtime targets passed CI for the published 0.1.0 release. Generated release wrappers receive their
 hashes from the exact assembled binaries, while checkout wrappers support local builds.
 
 Implementation decisions refining this plan:

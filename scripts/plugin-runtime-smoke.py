@@ -15,6 +15,7 @@ p.add_argument('binary', type=Path)
 p.add_argument('--work-dir', type=Path, default=None)
 p.add_argument('--toolchain-wrapper', type=Path, default=ROOT / 'kotlin')
 p.add_argument('--plugins', nargs='+', choices=['quarkus', 'detekt', 'sql'], default=['quarkus', 'detekt', 'sql'])
+p.add_argument('--sql-producer-dir', type=Path, help='Validate and execute a local self-contained SQLDelight producer without catalog substitution')
 args = p.parse_args()
 binary = args.binary.resolve(); work = args.work_dir.resolve() if args.work_dir else Path(tempfile.mkdtemp(prefix='ktc-plugin-runtime-'))
 work.mkdir(parents=True, exist_ok=True)
@@ -67,6 +68,21 @@ def detekt():
 
 def sql():
     root = consumer('sqldelight')
+    if args.sql_producer_dir:
+        source = args.sql_producer_dir.resolve()
+        validated = command(root, [str(binary), 'validate', '--project-dir', str(source), '--plugin', 'sqldelight'])
+        assert ', plugins/sqldelight-gen,' in validated
+        module_path = 'plugins/sqldelight-gen'
+        files = subprocess.run(['git', '-C', str(source), 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', module_path], capture_output=True, text=True, check=True).stdout.split('\0')
+        for name in filter(None, files):
+            file = root / name; file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / name, file)
+        license_target = root / module_path / '.ktc-licenses/LICENSE'
+        license_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / 'LICENSE', license_target)
+        assert '$libs.' not in (root / module_path / 'module.yaml').read_text()
+        sql_consumer(root)
+        return
     commit = '9c98f3e33dcecff5abd354a6517d691b65b501d0'
     archive = subprocess.run(['curl', '--disable', '--fail', '--silent', '--show-error', '--proto', '=https', '--max-time', '120', f'https://codeload.github.com/Heapy/kotgent/zip/{commit}'], capture_output=True, check=True).stdout
     prefix = 'plugins/sqldelight-gen/'
@@ -90,13 +106,17 @@ def sql():
         text = text.replace(alias, coordinate)
     assert '$libs.' not in text
     module.write_text(text)
+    sql_consumer(root)
+
+def sql_consumer(root):
     write(root, 'project.yaml', 'modules: [plugins/sqldelight-gen]\nplugins: [//plugins/sqldelight-gen]\n')
     write(root, 'module.yaml', 'product: jvm/lib\ndependencies:\n  - app.cash.sqldelight:runtime:2.3.2\nplugins:\n  sqldelight-gen: enabled\n')
     write(root, 'sqldelight/io/kotgent/db/Item.sq', 'CREATE TABLE item (id INTEGER NOT NULL PRIMARY KEY);\n\nselectAll:\nSELECT * FROM item;\n')
     output = command(root, [str(root / 'kotlin'), 'build', '-m', 'sqldelight'])
     # Root module name is its directory basename; generated sources compile with consumer dependencies.
     assert list((root / 'build').rglob('KotgentDatabase.kt')), output
-    print('SQLDelight generation and generated-source compilation passed with temporary literal coordinates', flush=True)
+    packaging = 'local self-contained producer' if args.sql_producer_dir else 'temporary literal coordinates'
+    print(f'SQLDelight generation and generated-source compilation passed with {packaging}', flush=True)
 
 failures = []
 with concurrent.futures.ThreadPoolExecutor(3) as executor:

@@ -280,6 +280,216 @@ class InstallerTest {
         deleteTree(file)
         assertFalse(fs.exists(file))
     }
+    @Test fun outdatedChecksOnlyMovingRefsAndDoesNotChangeProject() = project { root, cache ->
+        val remote = FakeRemote(first, mapOf(first to archive()))
+        val output = mutableListOf<String>()
+        val installer = Installer(root, cache, remote, output::add)
+        installer.add(decl, null, null, false)
+        val before = fingerprint(root)
+        remote.head = second; output.clear()
+        installer.outdated()
+        assertTrue(output.single().contains("$first -> $second (update available)"))
+        assertEquals(before, fingerprint(root))
+        assertEquals(2, remote.resolutions)
+        installer.update("sample", false, Ref("commit", first), false)
+        val resolutions = remote.resolutions; output.clear()
+        installer.outdated()
+        assertTrue(output.single().contains("pinned"))
+        assertEquals(resolutions, remote.resolutions)
+    }
+    @Test fun dryRunShowsSourceDeletionAndLockDiffWithoutChangingFiles() = project { root, cache ->
+        val remote = FakeRemote(first, mapOf(first to archive(), second to archive("new text", removed = true)))
+        val output = mutableListOf<String>()
+        val installer = Installer(root, cache, remote, output::add)
+        installer.add(decl, null, null, false)
+        val before = fingerprint(root)
+        remote.head = second; output.clear()
+        installer.update("sample", false, null, true)
+        val diff = output.joinToString("\n")
+        assertTrue(diff.contains("--- a/plugins/sample/src/main.kt"))
+        assertTrue(diff.contains("-first") && diff.contains("+new text"))
+        assertTrue(diff.contains("deleted file mode 100644") && diff.contains("src/old.kt"))
+        assertTrue(diff.contains("+++ b/ktc-plugins.lock.yaml") && diff.contains(second))
+        assertEquals(before, fingerprint(root))
+    }
+    @Test fun removeRequiresExplicitModulesAndPreservesSettingsAndSharedGlobs() = project { root, cache ->
+        writeText(root / "project.yaml", "# project\nmodules: [app, plugins/*]\nplugins: ['//plugins/manual']\n")
+        writeText(root / "app/module.yaml", "product: jvm/lib\nplugins:\n  sample:\n    enabled: true\n    message: keep-this\n  other: enabled # unrelated\n")
+        val installer = Installer(root, cache, FakeRemote(first, mapOf(first to archive())), {})
+        installer.add(decl.copy(mode = "downloaded"), null, null, false)
+        val before = fingerprint(root)
+        assertFailsWith<InstallError> { installer.remove("sample") }
+        assertEquals(before, fingerprint(root))
+        installer.remove("sample", setOf("app"), true)
+        assertEquals(before, fingerprint(root))
+        installer.remove("sample", setOf("app"))
+        assertFalse(fs.exists(root / "plugins/sample"))
+        assertTrue(declarations(readText(root / "ktc-plugins.yaml")).isEmpty())
+        assertTrue(locks(readText(root / "ktc-plugins.lock.yaml")).isEmpty())
+        val project = readText(root / "project.yaml")
+        assertTrue("plugins/*" in project && "//plugins/manual" in project && "//plugins/sample" !in project)
+        val module = readText(root / "app/module.yaml")
+        assertTrue("# message: keep-this" in module && "other: enabled # unrelated" in module)
+        assertEquals(setOf("other"), parseYaml(module).map().required("plugins").map().keys)
+        assertFalse("/sample/" in readText(root / "plugins/.gitignore"))
+    }
+    @Test fun removeRefusesSourceDriftAndRollsBackDeletionOnFailure() = project { root, cache ->
+        val remote = FakeRemote(first, mapOf(first to archive()))
+        Installer(root, cache, remote, {}).add(decl, null, null, false)
+        val original = readText(root / "plugins/sample/src/main.kt")
+        writeText(root / "plugins/sample/src/main.kt", "local edit")
+        val edited = fingerprint(root)
+        assertFailsWith<InstallError> { Installer(root, cache, remote, {}).remove("sample") }
+        assertEquals(edited, fingerprint(root))
+        writeText(root / "plugins/sample/src/main.kt", original)
+        val before = fingerprint(root)
+        assertFailsWith<InstallError> { Installer(root, cache, remote, {}, failAfter = 1).remove("sample") }
+        assertEquals(before, fingerprint(root))
+        assertTrue(fs.exists(root / "plugins/sample/module.yaml"))
+    }
+    @Test fun deletionRecoveryPreservesFilesCreatedAfterTheCrash() = project { root, _ ->
+        writeText(root / "owned/file", "original")
+        val dir = root / ".ktc-plugins/transaction"
+        fs.createDirectories(dir)
+        fs.atomicMove(root / "owned", dir / "old-0")
+        writeText(dir / "journal.yaml", "entries:\n  - path: owned\n    hadOriginal: true\n    newDigest: absent\n")
+        writeText(root / "owned/later", "new user content")
+        assertFailsWith<InstallError> { Transaction(root).recover() }
+        assertEquals("new user content", readText(root / "owned/later"))
+        deleteTree(root / "owned")
+        Transaction(root).recover()
+        assertEquals("original", readText(root / "owned/file"))
+    }
+    @Test fun removalYamlEditsHandleFlowMapsListsAndKeepUserIgnoreRules() {
+        val module = "plugins: {sample: {enabled: true, text: 'a,b'}, other: enabled} # keep\n"
+        val removed = removeYamlMapEntry(module, "plugins", "sample", true)
+        assertEquals(setOf("other"), parseYaml(removed).map().required("plugins").map().keys)
+        assertTrue("# keep" in removed && "text: 'a,b'" in removed)
+        val project = "modules:\n  - app\n  - plugins/* # shared\n  - plugins/sample\nplugins: ['//plugins/sample', '//plugins/other'] # keep\n"
+        val edited = unregisterPlugin(project, "plugins/sample")
+        assertTrue("plugins/* # shared" in edited && "//plugins/other" in edited && "plugins/sample" !in edited)
+        val ignore = "/sample/ # user-owned\n/sample/\n# ktc-plugins managed entries\n/sample/\n/other/\n"
+        assertEquals("/sample/ # user-owned\n/sample/\n# ktc-plugins managed entries\n/other/\n", removeManagedIgnore(ignore, "sample"))
+    }
+    @Test fun producerValidationChecksEverySelectionWithoutMutatingRepository() = project { root, _ ->
+        writeText(root / "ktc-plugin.yaml", "schemaVersion: 1\nplugins:\n  good:\n    module: good\n    licenseFiles: [LICENSE]\n  bad:\n    module: bad\n    licenseFiles: [LICENSE]\n")
+        for (name in listOf("good", "bad")) {
+            writeText(root / "$name/module.yaml", "product: jvm/amper-plugin\n" + if (name == "bad") "dependencies: [\$libs.core]\n" else "")
+            writeText(root / "$name/plugin.yaml", "tasks: {}\n")
+        }
+        writeText(root / "LICENSE", "license")
+        val before = fingerprint(root)
+        val output = mutableListOf<String>()
+        validateProducer(root, "good", output::add)
+        assertTrue(output.single().contains("good: valid"))
+        assertFailsWith<InstallError> { validateProducer(root, report = {}) }
+        assertFailsWith<InstallError> { validateProducer(root, "unknown", {}) }
+        assertEquals(before, fingerprint(root))
+        fs.delete(root / "LICENSE")
+        assertFailsWith<Exception> { validateProducer(root, "good", {}) }
+    }
+    private fun launchers(version: String): LauncherRelease {
+        val targets = listOf("macos-arm64", "linux-x64", "linux-arm64", "windows-x64")
+        val digests = targets.associate { target -> "ktc-plugins-$version-$target" + (if (target == "windows-x64") ".exe" else "") to sha256("binary $version $target") }.toMutableMap()
+        val unix = "#!/bin/sh\nversion='$version' # VERSION\n" + targets.filter { it != "windows-x64" }.joinToString("\n", postfix = "\n") { target ->
+            "sha='${digests.getValue("ktc-plugins-$version-$target")}' ;; # SHA_${target.uppercase().replace('-', '_')}"
+        }
+        val windows = "@echo off\r\nset \"ktc_version=$version\"\r\n\$sha = '${digests.getValue("ktc-plugins-$version-windows-x64.exe")}' # SHA_WINDOWS_X64\r\n"
+        val files = mapOf("ktc-plugins" to Payload(unix.encodeToByteArray(), true), "ktc-plugins.bat" to Payload(windows.encodeToByteArray()))
+        files.forEach { (name, file) -> digests[name] = file.record.sha256 }
+        return LauncherRelease(files, digests)
+    }
+    @Test fun wrapperUpdatesVerifyReleasePinsAndProtectLocalEdits() = project { root, cache ->
+        val versions = mapOf("0.1.0" to launchers("0.1.0"), "0.2.0" to launchers("0.2.0"))
+        val source = ReleaseSource { versions.getValue(it) }
+        val installer = Installer(root, cache, FakeRemote(first, emptyMap()), {})
+        val before = fingerprint(root)
+        installer.updateWrappers("0.1.0", source, true)
+        assertEquals(before, fingerprint(root))
+        installer.updateWrappers("0.1.0", source)
+        assertEquals("0.1.0", launcherVersion("ktc-plugins", fs.readBytes(root / "ktc-plugins")))
+        writeText(root / "ktc-plugins.bat", readText(root / "ktc-plugins.bat") + "rem local edit\n")
+        val edited = fingerprint(root)
+        assertFailsWith<InstallError> { installer.updateWrappers("0.2.0", source) }
+        assertEquals(edited, fingerprint(root))
+        writeBytes(root / "ktc-plugins.bat", versions.getValue("0.1.0").files.getValue("ktc-plugins.bat").bytes)
+        val original = fingerprint(root)
+        assertFailsWith<InstallError> { Installer(root, cache, FakeRemote(first, emptyMap()), {}, 1).updateWrappers("0.2.0", source) }
+        assertEquals(original, fingerprint(root))
+        installer.updateWrappers("0.2.0", source)
+        assertEquals("0.2.0", launcherVersion("ktc-plugins", fs.readBytes(root / "ktc-plugins")))
+        if (!Platform.windows) assertTrue(Platform.executable(root / "ktc-plugins"))
+        val release = versions.getValue("0.2.0")
+        assertFailsWith<InstallError> { validateLauncherRelease("0.2.0", release.copy(digests = release.digests + ("ktc-plugins-0.2.0-linux-x64" to first.padEnd(64, 'a')))) }
+        assertFailsWith<InstallError> { releaseVersion("latest") }
+    }
+    @Test fun releaseTransportVerifiesPublishedAssetsWithoutDownloadingNativeBinaries() = project { _, cache ->
+        val release = launchers("0.2.0")
+        val sums = release.digests.entries.joinToString("\n", postfix = "\n") { "${it.value}  ${it.key}" }.encodeToByteArray()
+        val payloads = release.files.mapValues { it.value.bytes } + ("SHA256SUMS" to sums)
+        val names = release.digests.keys.toList() + "SHA256SUMS"
+        val metadata = "tag_name: v0.2.0\ndraft: false\nprerelease: false\nassets:\n" + names.mapIndexed { index, name ->
+            val digest = if (name == "SHA256SUMS") Payload(sums).record.sha256 else release.digests.getValue(name)
+            "  - name: $name\n    state: uploaded\n    url: https://api.github.com/repos/Heapy/ktc-plugins/releases/assets/$index\n    digest: sha256:$digest\n    size: ${payloads[name]?.size ?: 100}\n"
+        }.joinToString("")
+        val requested = mutableListOf<String>()
+        val github = GitHub(cache, request = { url, _ ->
+            requested += url
+            if (url.endsWith("/tags/v0.2.0")) metadata.encodeToByteArray()
+            else payloads.getValue(names[url.substringAfterLast('/').toInt()])
+        })
+        val fetched = GitHubReleaseSource(github).release("0.2.0")
+        assertEquals(release.digests, fetched.digests)
+        assertEquals(4, requested.size)
+        val tampered = GitHub(cache, request = { url, _ -> if (url.endsWith("/tags/v0.2.0")) metadata.encodeToByteArray() else "tampered".encodeToByteArray() })
+        assertFailsWith<InstallError> { GitHubReleaseSource(tampered).release("0.2.0") }
+    }
+    @Test fun unifiedDiffCanBeAppliedByGitIncludingEmptyAndUnterminatedFiles() = project { root, _ ->
+        assertEquals(0, Platform.run(listOf("git", "init", "-q", root.toString())).code)
+        val cases = listOf("one\ntwo\n" to "one\nnew\ntwo\n", "one" to "two", "one\n" to "one", "" to "new\n", "old\n" to "")
+        for ((old, new) in cases) {
+            writeText(root / "file with spaces.txt", old)
+            val diff = fileDiff("file with spaces.txt", Payload(old.encodeToByteArray()), Payload(new.encodeToByteArray()))
+            val patch = root.parent!! / "change.patch"
+            writeText(patch, diff)
+            val result = Platform.run(listOf("git", "-C", root.toString(), "apply", patch.toString()))
+            assertEquals(0, result.code, result.stderr + "\n" + diff)
+            assertEquals(new, readText(root / "file with spaces.txt"))
+        }
+        val binary = fileDiff("binary", null, Payload(byteArrayOf(0, 1, 2)))
+        assertTrue("Binary/large file" in binary)
+    }
+    @Test fun validationHonorsGitIgnoresAndRemovalFindsRootAndNestedModules() = project { root, cache ->
+        assertEquals(0, Platform.run(listOf("git", "init", "-q", root.toString())).code)
+        writeText(root / "ktc-plugin.yaml", "schemaVersion: 1\nplugins:\n  sample:\n    module: producer\n    licenseFiles: [LICENSE]\n")
+        writeText(root / "producer/module.yaml", "product: jvm/amper-plugin\n")
+        writeText(root / "producer/plugin.yaml", "tasks: {}\n")
+        writeText(root / "LICENSE", "license")
+        writeText(root / ".gitignore", "/LICENSE\n")
+        assertFailsWith<InstallError> { validateProducer(root, report = {}) }
+        writeText(root / ".gitignore", "/ktc-plugin.yaml\n")
+        assertFailsWith<InstallError> { validateProducer(root, report = {}) }
+        writeText(root / ".gitignore", "")
+        validateProducer(root, report = {})
+        writeText(root / "project.yaml", "modules: ['apps/**', 'plugins/*']\n")
+        writeText(root / "module.yaml", "product: jvm/lib\nplugins: {sample: enabled}\n")
+        writeText(root / "apps/nested/module.yaml", "product: jvm/lib\nplugins: {sample: enabled}\n")
+        val installer = Installer(root, cache, FakeRemote(first, mapOf(first to archive())), {})
+        installer.add(decl, null, null, false)
+        val before = fingerprint(root)
+        assertFailsWith<InstallError> { installer.remove("sample", setOf(".")) }
+        assertEquals(before, fingerprint(root))
+        installer.remove("sample", setOf(".", "apps/nested"))
+        assertEquals(emptyMap(), parseYaml(readText(root / "module.yaml")).map().required("plugins").map())
+        assertEquals(emptyMap(), parseYaml(readText(root / "apps/nested/module.yaml")).map().required("plugins").map())
+    }
+    @Test fun newCliCommandsRejectInapplicableAndAmbiguousOptionsWithoutWriting() = project { root, _ ->
+        val before = fingerprint(root)
+        for (arguments in listOf(listOf("remove", "sample", "--all"), listOf("outdated", "--offline"), listOf("validate", "--dry-run"), listOf("wrapper", "update"), listOf("outdated", "one", "two"), listOf("update", "sample", "--disable-in", "app"))) {
+            assertFailsWith<InstallError> { executeCli(arguments + listOf("--project-dir", root.toString())) }
+            assertEquals(before, fingerprint(root))
+        }
+    }
 }
 
 /** ZIP fixtures with real central directory/CRC/mode metadata, independent of production decoding. */

@@ -4,6 +4,9 @@ A Kotlin/Native source installer for JetBrains Kotlin Toolchain build plugins.
 It downloads a GitHub repository at an explicit tag, branch, or full commit SHA,
 installs a self-contained plugin module, and registers it in your project.
 
+The source tree implements **0.2.0**. The published predecessor is **0.1.0**;
+build locally to use the new commands until a 0.2.0 release is published.
+
 ## Get version 0.1.0
 
 Download the generated launchers from the [0.1.0 release](https://github.com/Heapy/ktc-plugins/releases/tag/v0.1.0)
@@ -78,6 +81,8 @@ Use `--path .` for a standalone plugin at a repository root.
 
 ```sh
 ./ktc-plugins update quarkus --dry-run
+./ktc-plugins diff quarkus
+./ktc-plugins outdated
 ./ktc-plugins update quarkus
 ./ktc-plugins update quarkus --tag v1.1.0
 ./ktc-plugins update --all
@@ -100,8 +105,49 @@ Updates remove obsolete pristine upstream files. There is no force/merge mode.
 on those conditions, invalid Git tracking/ignore state, or an empty installation.
 Both operate without network or project mutation.
 
-`--dry-run` is available for `add`, `update` and `sync`: it reports planned paths and
-file counts, may fill the external source cache, and leaves the project unchanged.
+`--dry-run` prints unified source and metadata diffs for `add`, `update`, `sync`,
+`remove` and `wrapper update`. `diff NAME` / `diff --all` previews an update using the
+same checks as `update --dry-run`, including local-change protection and explicit
+acceptance of moved tags. It may fill the external cache and leaves the project unchanged.
+Text files up to 256 KiB receive a unified diff; binary/larger files show size and SHA-256.
+
+`outdated [NAME | --all]` compares locked commits to the exact declared branches/tags
+without downloading archives or changing the project. Commit declarations are reported
+as pinned without a request. It does not search for newer tags or resolve semver ranges.
+
+## Remove a plugin
+
+```sh
+./ktc-plugins remove heapy-detekt --disable-in app --dry-run
+./ktc-plugins remove heapy-detekt --disable-in app
+```
+
+Removal checks the lockfile and source inventory, refuses local/unowned edits, and
+transactionally removes the managed source and manifest/lock entries. Exact project
+registrations and managed downloaded ignore entries are removed; shared module globs,
+other plugins and user ignore rules remain. Missing source directories can be removed.
+
+Every registered module with configuration for the plugin must be named through
+repeatable `--disable-in MODULE` options (`.` selects the implicit root module).
+Its configuration is retained as comments, including custom settings. Block YAML and
+single-line flow collections are supported; unsupported edits fail before mutation.
+The scanner supports `*`, `?` and `**`; wildcard scans skip build/tool state directories.
+The installer changes no Git index entries; commit vendored deletions yourself.
+
+## Update project launchers
+
+```sh
+./ktc-plugins wrapper update --version 0.2.0 --dry-run
+./ktc-plugins wrapper update --version 0.2.0
+```
+
+Choose an exact **published stable** version. The updater verifies GitHub asset digests,
+`SHA256SUMS`, the embedded version and all four native binary pins before replacing
+both project launchers in one transaction. Existing launchers must match their official
+release (CRLF/LF checkout conversion is accepted); local changes and development
+templates are refused. Review and commit the result. The running executable is not
+replaced; subsequent launcher invocations select the chosen release. Version 0.1.0
+can be used to exercise the updater before 0.2.0 publication.
 
 ## Committed or downloaded sources
 
@@ -122,7 +168,7 @@ Commit the wrappers, client manifest, lockfile, project/module configuration and
 `plugins/.gitignore`. The parent ignore file contains `/heapy-detekt/`, so it survives
 removing/restoring the download. Other vendored plugins remain visible to Git.
 Already tracked downloaded files cause an error; the installer never untracks them.
-Mode conversion and uninstall are outside this release.
+Mode conversion remains outside this release.
 
 Bootstrap downloaded sources **before** invoking Toolchain, since model loading itself
 needs the registered plugin:
@@ -168,6 +214,15 @@ are copied under `.ktc-licenses/<repository-relative-path>` and included in the 
 Source headers are preserved. Missing declared files fail; undetected license material
 produces a diagnostic. Storage mode does not replace upstream licensing obligations.
 
+From a producer repository, run `ktc-plugins validate` before committing or publishing
+the plugin; `--plugin SELECTOR` validates one entry instead of all. It checks the
+working-tree manifest, self-contained module, portable YAML paths/catalog use, archive
+limits and license material without networking, installation or plugin execution.
+In Git repositories it includes tracked and nonignored untracked files, refuses
+ignored manifest/license material and reads current working-tree bytes. Outside Git,
+it examines the selected directory (excluding `.git`). Validation does not prove
+build/runtime compatibility or certify license permissions.
+
 ## Cache and platform support
 
 `GITHUB_TOKEN` or `GH_TOKEN` authenticates private repositories/API requests. Tokens
@@ -206,10 +261,10 @@ remain outside MVP. Installation does not execute plugin code; subsequent builds
 ./kotlin test -m core --platform jvm --platform macosArm64
 ./kotlin build -m cli-macos -m cli-linux -m cli-windows -v release
 python3 scripts/stage-binaries.py macosArm64 linuxX64 linuxArm64 mingwX64
-python3 scripts/package-release.py --version 0.1.0 \
+python3 scripts/package-release.py --version 0.2.0 \
   --binaries build/binaries --output build/release
-python3 scripts/smoke.py build/binaries/ktc-plugins-0.1.0-macos-arm64
-python3 scripts/test-wrappers.py build/binaries/ktc-plugins-0.1.0-macos-arm64
+python3 scripts/smoke.py build/binaries/ktc-plugins-0.2.0-macos-arm64
+python3 scripts/test-wrappers.py build/binaries/ktc-plugins-0.2.0-macos-arm64
 ```
 
 Cross-compilation requires a supported Toolchain compiler host. Build individual
@@ -220,7 +275,7 @@ are checksum-verified on every launch and work without network; concurrent downl
 publish only complete verified files. Installer upgrades require reviewing new wrappers.
 
 CI builds/tests every target, runs real-source installation smoke checks, packages the
-exact binaries and prepares a **draft** GitHub release on a matching `v0.1.0` tag.
+exact binaries and prepares a **draft** GitHub release on a matching version tag.
 Publication is a separate maintainer step; no consumer wrapper is silently upgraded.
 
 `scripts/plugin-runtime-smoke.py BINARY` also executes Quarkus packaging, detekt checks
@@ -229,6 +284,8 @@ is correctly rejected by the installer; this runtime fixture replaces only its f
 catalog aliases with the documented literal coordinates. Upstream repositories are
 not changed. Pass `--toolchain-wrapper PATH` and `--plugins quarkus detekt` to repeat
 those checks with the producers' 0.12.2 wrapper.
+Pass `--sql-producer-dir /path/to/kotgent` to validate and execute its adapted local
+SQLDelight producer without rewriting catalog aliases in the fixture.
 
 See [design.md](docs/design.md) for the full contract and plugin compatibility audit,
 and [verification.md](docs/verification.md) for the recorded local results.

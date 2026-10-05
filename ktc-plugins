@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 umask 077
-version='0.1.0' # VERSION
+version='0.2.0' # VERSION
 fail() { printf '%s\n' "ktc-plugins: $*" >&2; exit 1; }
 # Explicit development override; published wrappers always verify the pinned artifact.
 if [ -n "${KTC_PLUGINS_BINARY:-}" ]; then

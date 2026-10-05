@@ -31,7 +31,7 @@ class Transaction(private val root: Path) {
         fs.atomicMove(dir, cleanup)
         deleteTree(cleanup)
     }
-    fun commit(changes: Map<String, Map<String, Payload>>, failAfter: Int? = null) {
+    fun commit(changes: Map<String, Map<String, Payload>?>, failAfter: Int? = null) {
         checkInstall(!fs.exists(dir)) { "Unrecovered transaction" }
         val paths = changes.keys.toList()
         checkInstall(paths.indices.none { i -> paths.indices.any { j -> i != j && paths[j].startsWith(paths[i] + "/") } }) { "Transaction destinations overlap" }
@@ -43,18 +43,20 @@ class Transaction(private val root: Path) {
             changes.entries.forEachIndexed { index, (relative, payload) ->
                 val target = contained(root, relative)
                 val staged = dir / "new-$index"
-                if (payload.keys == setOf("")) writeBytes(staged, payload.getValue("").bytes, payload.getValue("").executable)
-                else writeTree(staged, payload)
-                appendLine("  - path: ${quote(relative)}\n    hadOriginal: ${fs.exists(target)}\n    newDigest: ${quote(fingerprint(staged))}")
+                if (payload != null) {
+                    if (payload.keys == setOf("")) writeBytes(staged, payload.getValue("").bytes, payload.getValue("").executable)
+                    else writeTree(staged, payload)
+                }
+                appendLine("  - path: ${quote(relative)}\n    hadOriginal: ${fs.exists(target)}\n    newDigest: ${quote(if (payload == null) "absent" else fingerprint(staged))}")
             }
         }
         durableWrite(dir / "journal.yaml", journal)
         try {
-            changes.entries.forEachIndexed { index, (relative, _) ->
+            changes.entries.forEachIndexed { index, (relative, payload) ->
                 val target = contained(root, relative)
                 fs.createDirectories(target.parent!!)
                 if (fs.exists(target)) fs.atomicMove(target, dir / "old-$index")
-                fs.atomicMove(dir / "new-$index", target)
+                if (payload != null) fs.atomicMove(dir / "new-$index", target)
                 if (failAfter == index + 1) fail("Injected transaction failure")
             }
             durableWrite(dir / "committed", "committed\n")

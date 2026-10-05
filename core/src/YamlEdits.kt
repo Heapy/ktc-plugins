@@ -122,3 +122,108 @@ fun ignoredEntries(text: String, names: List<String>): String {
     if (additions.isEmpty()) return text
     return text + (if (text.endsWith('\n') || text.isEmpty()) "" else "\n") + "# ktc-plugins managed entries\n" + additions.joinToString("\n", postfix = "\n")
 }
+
+/** Split a one-line flow collection without splitting quoted or nested values. */
+private fun flowParts(line: String, start: Int): Pair<List<String>, Int> {
+    var quote: Char? = null; var escaped = false; var depth = 0; var begin = start + 1
+    val parts = mutableListOf<String>()
+    var i = begin
+    while (i < line.length) {
+        val c = line[i]
+        if (escaped) { escaped = false; i++; continue }
+        if (quote == '"' && c == '\\') { escaped = true; i++; continue }
+        if (quote != null) {
+            if (c == quote) {
+                if (quote == '\'' && i + 1 < line.length && line[i + 1] == '\'') { i += 2; continue }
+                quote = null
+            }
+        } else when (c) {
+            '\'', '"' -> quote = c
+            '[', '{' -> depth++
+            ']', '}' -> if (depth == 0) {
+                val last = line.substring(begin, i).trim()
+                if (last.isNotEmpty()) parts += last
+                return parts to i
+            } else depth--
+            ',' -> if (depth == 0) { parts += line.substring(begin, i).trim(); begin = i + 1 }
+            '#' -> fail("Cannot safely edit a multiline/commented flow collection")
+        }
+        i++
+    }
+    fail("Cannot safely edit a multiline flow collection")
+}
+fun removeYamlListValues(text: String, key: String, matches: (String) -> Boolean): String {
+    val root = parseYaml(text) as? YamlMap ?: fail("Expected root mapping")
+    val pair = root.entries.entries.firstOrNull { it.key.content == key } ?: return text
+    if (pair.value is YamlNull) return text
+    val items = pair.value.list()
+    val remove = items.indices.filter { matches(items[it].string()) }.toSet()
+    if (remove.isEmpty()) return text
+    val lines = text.split('\n').toMutableList(); val index = pair.key.location.line - 1
+    checkInstall(pair.key.location.column == 1) { "Cannot safely edit $key" }
+    val line = lines[index]; val tail = line.substringAfter(':').trimStart()
+    if (tail.startsWith('[')) {
+        val start = line.indexOf('[', line.indexOf(':') + 1)
+        val (parts, end) = flowParts(line, start)
+        checkInstall(parts.size == items.size) { "Cannot safely edit flow list $key" }
+        lines[index] = line.substring(0, start + 1) + parts.filterIndexed { i, _ -> i !in remove }.joinToString(", ") + line.substring(end)
+    } else {
+        checkInstall(tail.isEmpty() || tail.startsWith('#')) { "Cannot edit anchored/complex list $key" }
+        for (i in remove.sortedDescending()) {
+            val at = items[i].location.line - 1
+            checkInstall(at > index && lines[at].trimStart().startsWith("- ") && !lines[at].substringAfter("- ").trimStart().startsWith('&')) { "Cannot safely edit list entry $key" }
+            // Multi-line scalar entries are not removed through a one-line edit.
+            val scalar = parseYaml("value: [${quote(items[i].string())}]").map().required("value").list().single().string()
+            checkInstall('\n' !in scalar) { "Cannot safely remove a multiline list entry" }
+            lines.removeAt(at)
+        }
+        if (remove.size == items.size) lines[index] = line.substringBefore(':') + ": []" + tail.takeIf { it.startsWith('#') }?.let { " $it" }.orEmpty()
+    }
+    return lines.joinToString("\n").also(::parseYaml)
+}
+fun removeYamlMapEntry(text: String, key: String, name: String, preserveConfiguration: Boolean = false): String {
+    val root = parseYaml(text) as? YamlMap ?: fail("Expected root mapping")
+    val pair = root.entries.entries.firstOrNull { it.key.content == key } ?: return text
+    if (pair.value is YamlNull) return text
+    val entries = (pair.value as? YamlMap)?.entries?.entries?.toList() ?: fail("Expected mapping $key")
+    val selected = entries.indexOfFirst { it.key.content == name }
+    if (selected < 0) return text
+    val lines = text.split('\n').toMutableList(); val header = pair.key.location.line - 1
+    checkInstall(pair.key.location.column == 1) { "Cannot safely edit $key" }
+    val line = lines[header]; val tail = line.substringAfter(':').trimStart()
+    if (tail.startsWith('{')) {
+        val start = line.indexOf('{', line.indexOf(':') + 1)
+        val (parts, end) = flowParts(line, start)
+        checkInstall(parts.size == entries.size) { "Cannot safely edit flow map $key" }
+        lines[header] = line.substring(0, start + 1) + parts.filterIndexed { i, _ -> i != selected }.joinToString(", ") + line.substring(end)
+        if (preserveConfiguration) lines.add(header + 1, "# ktc-plugins removed configuration: ${parts[selected]}")
+    } else {
+        checkInstall(tail.isEmpty() || tail.startsWith('#')) { "Cannot edit anchored/complex mapping $key" }
+        val entry = entries[selected].key
+        val start = entry.location.line - 1
+        checkInstall(start > header && entry.location.column == lines[start].takeWhile(Char::isWhitespace).length + 1) { "Cannot safely remove anchored/multiline mapping entry $name" }
+        val next = entries.getOrNull(selected + 1)?.key?.location?.line?.minus(1)
+            ?: root.entries.keys.map { it.location.line - 1 }.filter { it > header }.minOrNull() ?: lines.size
+        val end = insertionLine(lines, next)
+        checkInstall(end > start) { "Cannot determine mapping entry $name" }
+        val saved = lines.subList(start, end).toList()
+        lines.subList(start, end).clear()
+        if (preserveConfiguration) lines.addAll(start, saved.map { it.takeWhile(Char::isWhitespace) + "# " + it.trimStart() })
+        if (entries.size == 1) lines[header] = line.substringBefore(':') + ": {}" + tail.takeIf { it.startsWith('#') }?.let { " $it" }.orEmpty()
+    }
+    return lines.joinToString("\n").also(::parseYaml)
+}
+fun unregisterPlugin(text: String, destination: String): String {
+    fun same(value: String) = value.removePrefix("//").removePrefix("./") == destination
+    return removeYamlListValues(removeYamlListValues(text, "plugins", ::same), "modules", ::same)
+}
+fun removeManagedIgnore(text: String, basename: String): String {
+    var managed = false
+    return text.split('\n').filter { line ->
+        if (line.trim() == "# ktc-plugins managed entries") { managed = true; true }
+        else {
+            if (line.isBlank() || line.trimStart().startsWith('#') || !Regex("/[^/]+/").matches(line.trim())) managed = false
+            !(managed && line.trim() == "/$basename/")
+        }
+    }.joinToString("\n")
+}

@@ -5,6 +5,8 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+env:
+  KTC_PLUGINS_VERSION: 0.2.0
 permissions:
   contents: read
 jobs:
@@ -56,14 +58,14 @@ jobs:
           suffix=''
           target='${{ matrix.target }}'
           if [[ $target == windows-* ]]; then suffix='.exe'; fi
-          binary="build/binaries/ktc-plugins-0.1.0-${{ matrix.target }}$suffix"
+          binary="build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-${{ matrix.target }}$suffix"
           python scripts/smoke.py "$binary"
           python scripts/test-wrappers.py "$binary"
       - name: Execute installed plugin compatibility fixtures
         if: matrix.target == 'macos-arm64'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/plugin-runtime-smoke.py build/binaries/ktc-plugins-0.1.0-macos-arm64
+        run: python scripts/plugin-runtime-smoke.py "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-macos-arm64"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: binaries-${{ matrix.target }}
@@ -81,8 +83,8 @@ jobs:
       - run: |
           chmod +x build/binaries/*
           build/binaries/core-tests-linux-arm64
-          python3 scripts/smoke.py build/binaries/ktc-plugins-0.1.0-linux-arm64
-          python3 scripts/test-wrappers.py build/binaries/ktc-plugins-0.1.0-linux-arm64
+          python3 scripts/smoke.py "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-linux-arm64"
+          python3 scripts/test-wrappers.py "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-linux-arm64"
         env:
           GITHUB_TOKEN: ${{ github.token }}
   bundle:
@@ -95,7 +97,7 @@ jobs:
           pattern: binaries-*
           merge-multiple: true
           path: build/binaries
-      - run: python3 scripts/package-release.py --version 0.1.0 --binaries build/binaries --output build/release
+      - run: python3 scripts/package-release.py --version "$KTC_PLUGINS_VERSION" --binaries build/binaries --output build/release
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-bundle
@@ -118,5 +120,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          test "$TAG" = v0.1.0
+          test "$TAG" = "v$KTC_PLUGINS_VERSION"
           gh release create "$TAG" release/* --verify-tag --draft --title "ktc-plugins $TAG" --generate-notes

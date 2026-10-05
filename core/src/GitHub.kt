@@ -47,7 +47,7 @@ class GitHub(private val cache: Path, private val offline: Boolean = false, priv
             return bytes
         }
     }
-    private fun get(url: String, limit: Int = 8 * 1024 * 1024): ByteArray {
+    internal fun get(url: String, limit: Int = 8 * 1024 * 1024, releaseAsset: Boolean = false): ByteArray {
         request?.let { return it(url, limit) }
         val dir = tempDirectory()
         try {
@@ -56,7 +56,8 @@ class GitHub(private val cache: Path, private val offline: Boolean = false, priv
                 checkInstall(it.none { c -> c.code < 32 }) { "Invalid GitHub token" }
                 "header = \"Authorization: Bearer ${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"\n"
             } ?: ""
-            writeText(config, "header = \"Accept: application/vnd.github+json\"\nheader = \"X-GitHub-Api-Version: 2022-11-28\"\n$auth")
+            val accept = if (releaseAsset) "application/octet-stream" else "application/vnd.github+json"
+            writeText(config, "header = \"Accept: $accept\"\nheader = \"X-GitHub-Api-Version: 2022-11-28\"\n$auth")
             Platform.permissions(config, false, private = true)
             var next = url
             repeat(4) { attempt ->
@@ -76,7 +77,8 @@ class GitHub(private val cache: Path, private val offline: Boolean = false, priv
                 if (status in 200..299) return fs.readBytes(body, limit.toLong())
                 if (status in setOf(301, 302, 303, 307, 308)) {
                     val location = readText(headers).lineSequence().lastOrNull { it.startsWith("location:", ignoreCase = true) }?.substringAfter(':')?.trim() ?: fail("Missing GitHub redirect location")
-                    checkInstall(location.startsWith("https://codeload.github.com/") || location.startsWith("https://api.github.com/")) { "Rejected redirect to an unapproved host" }
+                    val allowed = if (releaseAsset) listOf("https://release-assets.githubusercontent.com/", "https://objects.githubusercontent.com/") else listOf("https://codeload.github.com/")
+                    checkInstall(location.startsWith("https://api.github.com/") || allowed.any(location::startsWith)) { "Rejected redirect to an unapproved host" }
                     next = location
                 } else fail("GitHub returned HTTP $status; check the repository/ref, access token and rate limit")
             }
@@ -93,7 +95,9 @@ fun urlEncode(value: String): String = value.encodeToByteArray().joinToString(""
 
 data class Prepared(val lock: Locked, val payload: Map<String, Payload>)
 fun prepare(declaration: Declaration, commit: String, zip: ByteArray, diagnostic: (String) -> Unit = {}): Prepared {
-    val repo = readZip(zip, allowUnselectedSymlinks = true)
+    return prepareRepository(declaration, commit, readZip(zip, allowUnselectedSymlinks = true), diagnostic)
+}
+fun prepareRepository(declaration: Declaration, commit: String, repo: Map<String, Payload>, diagnostic: (String) -> Unit = {}): Prepared {
     checkInstall(repo["ktc-plugin.yaml"]?.symbolicLink != true) { "Producer manifest must not be a symlink" }
     val producerBytes = repo["ktc-plugin.yaml"]?.bytes
     val root = producerBytes?.let { schema(it.decodeToString()).required("plugins").map() }

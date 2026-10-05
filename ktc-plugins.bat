@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-set "ktc_version=0.1.0"
+set "ktc_version=0.2.0"
 if defined KTC_PLUGINS_BINARY goto run
 if not defined KTC_PLUGINS_BINARY_CACHE set "KTC_PLUGINS_BINARY_CACHE=%LOCALAPPDATA%\ktc-plugins\binaries"
 set "KTC_PLUGINS_BINARY=%KTC_PLUGINS_BINARY_CACHE%\%ktc_version%\windows-x64\ktc-plugins-%ktc_version%-windows-x64.exe"
