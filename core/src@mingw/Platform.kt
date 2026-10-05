@@ -44,6 +44,13 @@ actual object Platform {
         val attributes = GetFileAttributesW(path.toString())
         return attributes != INVALID_FILE_ATTRIBUTES.toUInt() && attributes and FILE_ATTRIBUTE_REPARSE_POINT.toUInt() != 0u
     }
+    actual fun delete(path: Path) {
+        val attributes = GetFileAttributesW(path.toString())
+        if (attributes != INVALID_FILE_ATTRIBUTES.toUInt() && attributes and FILE_ATTRIBUTE_READONLY.toUInt() != 0u) {
+            checkInstall(SetFileAttributesW(path.toString(), attributes and FILE_ATTRIBUTE_READONLY.toUInt().inv()) != 0) { "Cannot remove read-only attribute: $path" }
+        }
+        fs.delete(path)
+    }
     actual fun lock(path: Path): AutoCloseable = memScoped {
         val handle = CreateFileW(path.toString().wcstr.ptr, GENERIC_READ.toUInt() or GENERIC_WRITE.toUInt(), 0u, null, OPEN_ALWAYS.toUInt(), FILE_ATTRIBUTE_NORMAL.toUInt(), null)
         checkInstall(handle != INVALID_HANDLE_VALUE) { "Another installer is using $path" }

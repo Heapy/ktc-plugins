@@ -29,6 +29,10 @@ actual object Platform {
         if (Files.isSymbolicLink(file)) return true
         return windows && Files.exists(file, LinkOption.NOFOLLOW_LINKS) && file.toRealPath(LinkOption.NOFOLLOW_LINKS) != file.toRealPath()
     }
+    actual fun delete(path: Path) {
+        if (windows) Files.setAttribute(path.toNioPath(), "dos:readonly", false, LinkOption.NOFOLLOW_LINKS)
+        fs.delete(path)
+    }
     actual fun lock(path: Path): AutoCloseable {
         val file = RandomAccessFile(path.toFile(), "rw")
         val lock = try { file.channel.tryLock() } catch (e: java.nio.channels.OverlappingFileLockException) { null }

@@ -3,6 +3,7 @@ package io.heapy.ktcplugins
 import kotlin.test.*
 import okio.Buffer
 import okio.Path
+import okio.Path.Companion.toPath
 import okio.ByteString.Companion.decodeHex
 
 class InstallerTest {
@@ -265,6 +266,19 @@ class InstallerTest {
         assertFailsWith<InstallError> { Installer(root, root / "cache", remote, {}).add(decl, null, null, true) }
         assertEquals(0, remote.resolutions)
         assertEquals(before, fingerprint(root))
+    }
+    @Test fun windowsHostPathsAndReadOnlyCleanup() = project { root, cache ->
+        if (!Platform.windows) return@project
+        val forward = cache.toString().replace('\\', '/')
+        assertTrue(systemPath(forward).isAbsolute)
+        assertEquals(absoluteLocation(cache), absoluteLocation(systemPath(forward)))
+        assertEquals(absoluteLocation(cache), absoluteLocation(forward.toPath()))
+        Installer(root, systemPath(forward), FakeRemote(first, mapOf(first to archive())), {}).add(decl, null, null, false)
+        val file = root / "readonly"
+        writeText(file, "immutable Git object")
+        assertEquals(0, Platform.run(listOf("attrib.exe", "+R", file.toString())).code)
+        deleteTree(file)
+        assertFalse(fs.exists(file))
     }
 }
 

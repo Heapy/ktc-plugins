@@ -48,13 +48,13 @@ fun executeCli(args: List<String>) {
     val refs = listOf("tag", "branch", "commit").mapNotNull { kind -> values["--$kind"]?.let { Ref(kind, it) } }
     checkInstall(refs.size <= 1) { "Choose exactly one tag, branch, or commit" }
     val ref = refs.singleOrNull()
-    val root = fs.canonicalize((values["--project-dir"] ?: ".").toPath())
+    val root = fs.canonicalize(systemPath(values["--project-dir"] ?: "."))
     if (Platform.windows) {
         var ancestor: okio.Path? = root
         while (ancestor != null) { checkNoLink(ancestor); ancestor = ancestor.parent }
     }
     checkInstall(fs.metadata(root).isDirectory) { "Project root must be a directory" }
-    val cache = (values["--cache-dir"] ?: Platform.env("KTC_PLUGINS_CACHE_DIR") ?: defaultCache()).toPath()
+    val cache = systemPath(values["--cache-dir"] ?: Platform.env("KTC_PLUGINS_CACHE_DIR") ?: defaultCache())
     val installer = Installer(root, cache, GitHub(cache / "archives", "--offline" in enabled))
     val common = setOf("--project-dir", "--cache-dir")
     val allowed = when (command) {

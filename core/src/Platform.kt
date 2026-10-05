@@ -14,12 +14,15 @@ expect object Platform {
     fun permissions(path: Path, executable: Boolean, private: Boolean = false)
     fun executable(path: Path): Boolean
     fun isLink(path: Path): Boolean
+    fun delete(path: Path)
     fun lock(path: Path): AutoCloseable
     fun exit(code: Int): Nothing
 }
 val fs: FileSystem get() = FileSystem.SYSTEM
+/** Okio treats C:/... as relative; normalize host paths before parsing on Windows. */
+fun systemPath(value: String): Path = (if (Platform.windows) value.replace('/', '\\') else value).toPath()
 fun tempDirectory(): Path {
-    val base = if (Platform.windows) (Platform.env("TEMP") ?: Platform.env("TMP") ?: fail("Set TEMP to a private temporary directory")).toPath()
+    val base = if (Platform.windows) systemPath(Platform.env("TEMP") ?: Platform.env("TMP") ?: fail("Set TEMP to a private temporary directory"))
         else (Platform.env("TMPDIR") ?: "/tmp").toPath()
     val dir = base / "ktc-plugins-${Random.nextLong().toULong().toString(16)}"
     fs.createDirectory(dir, mustCreate = true)
@@ -52,7 +55,8 @@ fun contained(root: Path, relative: String): Path {
     return current
 }
 fun absoluteLocation(path: Path): Path {
-    var ancestor = if (path.isAbsolute) path else fs.canonicalize(".".toPath()) / path
+    val hostPath = systemPath(path.toString())
+    var ancestor = if (hostPath.isAbsolute) hostPath else fs.canonicalize(".".toPath()) / hostPath
     val suffix = mutableListOf<String>()
     while (!fs.exists(ancestor)) {
         suffix += ancestor.name
@@ -70,5 +74,5 @@ fun deleteTree(path: Path) {
     checkNoLink(path)
     val metadata = fs.metadataOrNull(path) ?: return
     if (metadata.isDirectory) fs.list(path).forEach(::deleteTree)
-    fs.delete(path)
+    Platform.delete(path)
 }

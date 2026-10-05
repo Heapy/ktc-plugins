@@ -18,7 +18,7 @@ class Installer(
         val cachePath = comparable(absoluteLocation(cache))
         checkInstall(cachePath != projectPath && !cachePath.startsWith("$projectPath/")) { "Source cache must be outside the project (including for dry-run)" }
         // A cache override must not let a second process bypass the project lock.
-        val lockDirectory = defaultCache().toPath() / "locks"
+        val lockDirectory = systemPath(defaultCache()) / "locks"
         fs.createDirectories(lockDirectory)
         Platform.permissions(lockDirectory, true, private = true)
         val canonicalKey = root.toString().let { if (Platform.windows || Platform.macos) it.lowercase() else it }

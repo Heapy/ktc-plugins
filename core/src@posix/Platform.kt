@@ -6,6 +6,7 @@ import okio.Path
 import platform.posix.*
 
 actual object Platform {
+    actual fun delete(path: Path) = fs.delete(path)
     actual val windows: Boolean = false
     actual val macos: Boolean = kotlin.native.Platform.osFamily == kotlin.native.OsFamily.MACOSX
     actual fun error(message: String) { fputs("$message\n", stderr) }

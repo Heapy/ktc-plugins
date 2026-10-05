@@ -50,6 +50,8 @@ jobs:
           python scripts/stage-binaries.py linuxArm64
           cp build/tasks/_core_linkLinuxArm64TestDebug/core_test.kexe build/binaries/core-tests-linux-arm64
       - name: Run native CLI and wrappers
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           suffix=''
           target='${{ matrix.target }}'
@@ -59,6 +61,8 @@ jobs:
           python scripts/test-wrappers.py "$binary"
       - name: Execute installed plugin compatibility fixtures
         if: matrix.target == 'macos-arm64'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/plugin-runtime-smoke.py build/binaries/ktc-plugins-0.1.0-macos-arm64
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -79,6 +83,8 @@ jobs:
           build/binaries/core-tests-linux-arm64
           python3 scripts/smoke.py build/binaries/ktc-plugins-0.1.0-linux-arm64
           python3 scripts/test-wrappers.py build/binaries/ktc-plugins-0.1.0-linux-arm64
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
   bundle:
     needs: [build, arm64-runtime]
     runs-on: ubuntu-24.04

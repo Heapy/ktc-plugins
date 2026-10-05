@@ -5,7 +5,8 @@ No upstream plugin repository was modified and no release was published.
 
 ## Core and native builds
 
-The shared core has 22 tests, run on JVM and macOS ARM64. Coverage includes:
+The shared core has 23 tests, run on JVM and macOS ARM64 (including the 2026-10-05
+Windows path/read-only cleanup regression). Coverage includes:
 
 - Locked restoration without branch resolution, branch updates, removed pristine
   files, no-op updates and local/unowned-file drift protection.
@@ -103,7 +104,11 @@ Workflow syntax passes `actionlint`; the Unix launcher passes `shellcheck`. CI t
 JVM/native core behavior on macOS, Linux x64 and Windows, and executes cross-compiled
 ARM64 tests on an ARM64 runner. Pinned real-source smoke tests and wrapper tests run
 on each runtime host. A version tag prepares a draft release only after these checks.
-The workflow has not been run remotely in this local implementation session.
+The first remote run on 2026-10-05 passed Linux x64 checks and found a macOS GitHub
+API rate limit plus Windows JVM path parsing and read-only Git object cleanup issues.
+CI now authenticates network fixtures; host paths are normalized before Okio parsing
+on Windows, and guarded cleanup clears the read-only attribute before deletion.
+Subsequent platform results are recorded in [GitHub Actions](https://github.com/Heapy/ktc-plugins/actions).
 
 ## Failure/recovery boundaries
 
