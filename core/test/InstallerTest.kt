@@ -452,7 +452,8 @@ class InstallerTest {
             val diff = fileDiff("file with spaces.txt", Payload(old.encodeToByteArray()), Payload(new.encodeToByteArray()))
             val patch = root.parent!! / "change.patch"
             writeText(patch, diff)
-            val result = Platform.run(listOf("git", "-C", root.toString(), "apply", patch.toString()))
+            // Test patch bytes independently of the host's checkout newline policy.
+            val result = Platform.run(listOf("git", "-C", root.toString(), "-c", "core.autocrlf=false", "-c", "core.eol=lf", "apply", patch.toString()))
             assertEquals(0, result.code, result.stderr + "\n" + diff)
             assertEquals(new, readText(root / "file with spaces.txt"))
         }
