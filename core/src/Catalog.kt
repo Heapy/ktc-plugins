@@ -23,6 +23,7 @@ fun catalogSpec(node: YamlNode): CatalogSpec {
 data class LockedCatalog(
     val source: String, val sha256: String, val libraries: Map<String, String>,
     val file: String = "libs.versions.toml",
+    val versionRefs: Map<String, String> = emptyMap(),
 ) {
     init {
         safeRelative(source)
@@ -30,6 +31,19 @@ data class LockedCatalog(
         checkInstall(Regex("[0-9a-f]{64}").matches(sha256)) { "Invalid catalog digest" }
         libraries.forEach { (alias, coordinates) -> catalogAlias(alias); pinnedCoordinates(coordinates) }
         uniqueAccessors(libraries.keys)
+        versionRefs.forEach { (library, ref) ->
+            checkInstall(library in libraries) { "Unknown version reference library: $library" }
+            catalogAlias(ref)
+        }
+        uniqueAccessors(versionRefs.values.distinct())
+        versionRefs.entries.groupBy { it.value }.forEach { (ref, entries) ->
+            checkInstall(entries.map { libraries.getValue(it.key).substringAfterLast(':') }.distinct().size == 1) {
+                "Conflicting catalog version reference: $ref"
+            }
+        }
+    }
+    val versions: Map<String, String> get() = versionRefs.entries.associate { (library, ref) ->
+        ref to libraries.getValue(library).substringAfterLast(':')
     }
 }
 
@@ -109,6 +123,12 @@ class ProducerCatalog(text: String) {
             ?: fail("Unknown producer catalog reference: $reference")
         return resolve(alias)
     }
+    fun versionRef(alias: String): String? {
+        resolve(alias)
+        val entry = libraries.getValue(alias) as? CatalogTable ?: return null
+        val version = entry["version"] as? CatalogTable ?: return null
+        return catalogAlias(version.getValue("ref").stringValue())
+    }
 }
 
 /** Replace only parsed scalar tokens, including mapping keys and tagged action values. */
@@ -140,31 +160,53 @@ fun resolveCatalogYaml(text: String, catalog: ProducerCatalog): String {
     return result
 }
 
-/** Managed entries live in the flat libraries table accepted by Kotlin Toolchain. */
-fun catalogBlock(l: Locked): String {
-    val libraries = l.catalog?.libraries.orEmpty()
-    if (libraries.isEmpty()) return ""
+/** Managed entries use separate blocks in the flat libraries and versions tables. */
+fun catalogBlock(l: Locked, section: String = "libraries"): String {
+    val catalog = l.catalog ?: return ""
+    val entries = if (section == "versions") catalog.versions else catalog.libraries
+    if (entries.isEmpty()) return ""
+    val marker = l.pluginId + if (section == "versions") " versions" else ""
     return buildString {
-        appendLine("# ktc-plugins begin ${l.pluginId}")
-        for ((alias, coordinates) in libraries.entries.sortedBy { it.key }) {
-            appendLine("$alias = { module = \"${coordinates.substringBeforeLast(':')}\", version = \"${coordinates.substringAfterLast(':')}\" }")
+        appendLine("# ktc-plugins begin $marker")
+        for ((alias, value) in entries.entries.sortedBy { it.key }) {
+            if (section == "versions") appendLine("$alias = \"$value\"") else {
+                val version = catalog.versionRefs[alias]?.let { "version.ref = \"$it\"" }
+                    ?: "version = \"${value.substringAfterLast(':')}\""
+                appendLine("$alias = { module = \"${value.substringBeforeLast(':')}\", $version }")
+            }
         }
-        appendLine("# ktc-plugins end ${l.pluginId}")
+        appendLine("# ktc-plugins end $marker")
     }
 }
+
+private val managedCatalogSections = listOf("versions", "libraries")
 
 fun verifyCatalog(text: String?, l: Locked) {
     if (l.catalog?.libraries.isNullOrEmpty()) return
     checkInstall(text != null) { "Missing managed catalog: ${l.catalog.file}" }
     val normalized = text!!.replace("\r\n", "\n")
-    val block = catalogBlock(l)
-    checkInstall(normalized.indexOf(block) >= 0 && normalized.indexOf(block) == normalized.lastIndexOf(block)) {
-        "Modified/missing managed catalog exports for ${l.pluginId}"
+    val parsed = parseToml(normalized)
+    for (section in managedCatalogSections) {
+        val block = catalogBlock(l, section)
+        if (block.isEmpty()) continue
+        checkInstall(normalized.indexOf(block) >= 0 && normalized.indexOf(block) == normalized.lastIndexOf(block)) {
+            "Modified/missing managed catalog exports for ${l.pluginId}"
+        }
+        val actual = parsed.section(section)
+        val expected = parseToml("[$section]\n$block").section(section)
+        checkInstall(expected.all { (alias, value) -> actual[alias] == value }) { "Modified managed catalog entries for ${l.pluginId}" }
+        uniqueAccessors(actual.keys)
     }
-    val actual = parseToml(normalized).section("libraries")
-    val expected = parseToml("[libraries]\n$block").section("libraries")
-    checkInstall(expected.all { (alias, value) -> actual[alias] == value }) { "Modified managed catalog entries for ${l.pluginId}" }
-    uniqueAccessors(actual.keys)
+}
+
+private fun unmanagedCatalog(root: CatalogTable, locks: List<Locked>): Map<String, CatalogValue> = buildMap {
+    putAll(root.filterKeys { it !in managedCatalogSections })
+    for (section in managedCatalogSections) {
+        val managed = locks.flatMap {
+            if (section == "versions") it.catalog?.versions.orEmpty().keys else it.catalog?.libraries.orEmpty().keys
+        }.toSet()
+        put(section, CatalogTable(root.section(section).filterKeys { it !in managed }))
+    }
 }
 
 fun editCatalog(text: String?, old: List<Locked>, next: List<Locked>): String {
@@ -173,29 +215,31 @@ fun editCatalog(text: String?, old: List<Locked>, next: List<Locked>): String {
     // Keep original line endings outside managed blocks.
     for (l in old) {
         verifyCatalog(result, l)
-        val block = catalogBlock(l)
-        if (block.isNotEmpty()) {
-            val raw = if (block in result) block else block.replace("\n", "\r\n")
-            result = result.replace(raw, "")
+        for (section in managedCatalogSections) {
+            val block = catalogBlock(l, section)
+            if (block.isNotEmpty()) {
+                val raw = if (block in result) block else block.replace("\n", "\r\n")
+                result = result.replace(raw, "")
+            }
         }
     }
     val root = parseToml(result)
-    val removed = old.flatMap { it.catalog?.libraries.orEmpty().keys }.toSet()
-    checkInstall(before.section("libraries").filterKeys { it !in removed } == root.section("libraries").content &&
-        before.filterKeys { it != "libraries" } == root.filterKeys { it != "libraries" }) { "Cannot safely remove catalog exports" }
-    val existing = root.section("libraries").keys.map(::catalogAccessor).toMutableSet()
-    for (l in next) {
-        for (alias in l.catalog?.libraries.orEmpty().keys) {
-            checkInstall(existing.add(catalogAccessor(alias))) { "Catalog alias conflict: $alias" }
+    checkInstall(unmanagedCatalog(before, old) == unmanagedCatalog(root, emptyList())) { "Cannot safely remove catalog exports" }
+    for (section in managedCatalogSections) {
+        val existing = root.section(section).keys.map(::catalogAccessor).toMutableSet()
+        for (l in next) {
+            val aliases = if (section == "versions") l.catalog?.versions.orEmpty().keys else l.catalog?.libraries.orEmpty().keys
+            for (alias in aliases) {
+                checkInstall(existing.add(catalogAccessor(alias))) { "Catalog alias conflict: $alias" }
+            }
         }
-    }
-    val blocks = next.joinToString("") { catalogBlock(it) }
-    if (blocks.isNotEmpty()) {
-        val headers = Regex("(?m)^[ \t]*\\[[ \t]*(?:libraries|\"libraries\"|'libraries')[ \t]*][ \t]*(?:#[^\\r\\n]*)?\\r?$").findAll(result).toList()
-        if ("libraries" !in root) {
-            result += (if (result.isEmpty() || result.endsWith('\n')) "" else "\n") + "[libraries]\n" + blocks
+        val blocks = next.joinToString("") { catalogBlock(it, section) }
+        if (blocks.isEmpty()) continue
+        val headers = Regex("(?m)^[ \t]*\\[[ \t]*(?:$section|\"$section\"|'$section')[ \t]*][ \t]*(?:#[^\\r\\n]*)?\\r?$").findAll(result).toList()
+        if (section !in root) {
+            result += (if (result.isEmpty() || result.endsWith('\n')) "" else "\n") + "[$section]\n" + blocks
         } else {
-            checkInstall(headers.size == 1) { "Use a single [libraries] table header before exporting catalogs" }
+            checkInstall(headers.size == 1) { "Use a single [$section] table header before exporting catalogs" }
             val end = headers.single().range.last + 1
             val newline = if (result.getOrNull(end) == '\r') end + 1 else end
             val hasNewline = result.getOrNull(newline) == '\n'
@@ -205,9 +249,9 @@ fun editCatalog(text: String?, old: List<Locked>, next: List<Locked>): String {
     }
     val parsed = parseToml(result)
     // Inserting entries must never change the interpretation of existing content.
-    val exported = next.flatMap { it.catalog?.libraries.orEmpty().keys }.toSet()
-    checkInstall(parsed.section("libraries").filterKeys { it !in exported } == root.section("libraries").content &&
-        parsed.filterKeys { it != "libraries" } == root.filterKeys { it != "libraries" }) { "Cannot safely append catalog exports" }
+    checkInstall(unmanagedCatalog(parsed, next) == unmanagedCatalog(root, emptyList())) { "Cannot safely append catalog exports" }
     next.forEach { verifyCatalog(result, it) }
-    return if (old.map(::catalogBlock).sorted() == next.map(::catalogBlock).sorted()) text ?: result else result
+    return if (managedCatalogSections.all { section ->
+        old.map { catalogBlock(it, section) }.sorted() == next.map { catalogBlock(it, section) }.sorted()
+    }) text ?: result else result
 }

@@ -24,7 +24,7 @@ class CatalogTest {
             [libraries]
             sql-compiler = { module = "app.cash.sqldelight:compiler", version.ref = "sql" }
             sql-runtime = { group = "app.cash.sqldelight", name = "runtime", version.ref = "sql" }
-            sql-driver = "app.cash.sqldelight:sqlite-driver:$version"
+            sql-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sql" }
             unrelated = { module = "example:unused", version = { strictly = "1.0" } }
         """.trimIndent(),
         "plugin/module.yaml" to """
@@ -110,7 +110,7 @@ class CatalogTest {
         installer.add(declaration, null, null, false)
         val original = readText(root / "libs.versions.toml")
         remote.head = second
-        for (changed in listOf(original.replace("2.3.2", "9.0"), "[libraries]\n", original.replace("version = \"2.3.2\"", "version = \"2.3.2\", extra = \"mine\""))) {
+        for (changed in listOf(original.replace("2.3.2", "9.0"), "[libraries]\n", original.replace("version.ref = \"ktc-sql-sql\"", "version.ref = \"ktc-sql-sql\", extra = \"mine\""))) {
             writeText(root / "libs.versions.toml", changed)
             val before = fingerprint(root)
             assertFailsWith<InstallError> { installer.update("sql", false, null, false) }
@@ -226,11 +226,81 @@ class CatalogTest {
         }
         val prepared = prepareRepository(declaration, first, repo)
         val block = catalogBlock(prepared.lock)
-        assertTrue("ktc-sql-sql-runtime = { module = \"app.cash.sqldelight:runtime\", version = \"2.3.2\" }" in block)
+        assertTrue("ktc-sql-sql-runtime = { module = \"app.cash.sqldelight:runtime\", version.ref = \"ktc-sql-sql\" }" in block)
         assertFalse("ktc-sql-sql_runtime" in block)
         for (path in listOf("libs.versions.toml", "gradle/libs.versions.toml", "gradle", "libs.versions.toml/plugin")) {
             assertFailsWith<InstallError> { validateDestination(path) }
         }
+    }
+
+    @Test fun exportsShareProducerVersionAliasesButKeepIndependentVersionsSeparate() {
+        val repo = repository().toMutableMap()
+        val path = "gradle/libs.versions.toml"
+        repo[path] = Payload(repo.getValue(path).bytes.decodeToString()
+            .replace("sql = \"2.3.2\"", "sql = \"2.3.2\"\nother = \"2.3.2\"")
+            .replace("version.ref = \"sql\" }\nunrelated", "version.ref = \"other\" }\nunrelated")
+            .encodeToByteArray())
+        val shared = prepareRepository(declaration, first, repository()).lock
+        val text = editCatalog(null, emptyList(), listOf(shared))
+        assertEquals(1, Regex("2\\.3\\.2").findAll(text).count())
+        assertEquals(2, Regex("version.ref = \"ktc-sql-sql\"").findAll(text).count())
+        assertEquals("app.cash.sqldelight:runtime:2.3.2", ProducerCatalog(text).resolve("ktc-sql-sql-runtime"))
+        assertEquals("app.cash.sqldelight:sqlite-driver:2.3.2", ProducerCatalog(text).resolve("ktc-sql-sql-driver"))
+        for (otherVersion in listOf("2.3.2", "2.4.0")) {
+            val independentRepo = repo + (path to Payload(repo.getValue(path).bytes.decodeToString()
+                .replace("other = \"2.3.2\"", "other = \"$otherVersion\"").encodeToByteArray()))
+            val independent = prepareRepository(declaration, first, independentRepo).lock
+            assertEquals(mapOf("ktc-sql-sql" to "2.3.2", "ktc-sql-other" to otherVersion), independent.catalog!!.versions)
+            assertEquals(independent, locks(lockYaml(mapOf("sql" to independent))).getValue("sql"))
+            val consumer = ProducerCatalog(editCatalog(null, emptyList(), listOf(independent)))
+            assertEquals("app.cash.sqldelight:runtime:2.3.2", consumer.resolve("ktc-sql-sql-runtime"))
+            assertEquals("app.cash.sqldelight:sqlite-driver:$otherVersion", consumer.resolve("ktc-sql-sql-driver"))
+        }
+        // Inline coordinates are not coupled to an unrelated alias with the same value.
+        repo[path] = Payload(repo.getValue(path).bytes.decodeToString()
+            .replace("{ module = \"app.cash.sqldelight:sqlite-driver\", version.ref = \"other\" }", "\"app.cash.sqldelight:sqlite-driver:2.3.2\"")
+            .encodeToByteArray())
+        val inline = prepareRepository(declaration, first, repo).lock
+        assertFalse("ktc-sql-sql-driver" in inline.catalog!!.versionRefs)
+        verifyCatalog(editCatalog(null, emptyList(), listOf(inline)), inline)
+    }
+
+    @Test fun versionAliasCollisionsNeverAdoptUserEntries() = project { root, cache ->
+        for (alias in listOf("ktc-sql-sql", "ktc_sql_sql", "ktc.sql.sql")) {
+            writeText(root / "libs.versions.toml", "[versions]\n'$alias' = '2.3.2'\n[libraries]\n")
+            val before = fingerprint(root)
+            assertFailsWith<InstallError> { Installer(root, cache, remote(), {}).add(declaration, null, null, false) }
+            assertEquals(before, fingerprint(root))
+        }
+    }
+
+    @Test fun versionBlocksMustRemainInTheVersionsTable() {
+        val locked = prepareRepository(declaration, first, repository()).lock
+        val text = "[libraries]\n" + catalogBlock(locked, "versions") + catalogBlock(locked)
+        assertFailsWith<InstallError> { verifyCatalog(text, locked) }
+        val valid = editCatalog(null, emptyList(), listOf(locked))
+        assertFailsWith<InstallError> { verifyCatalog(valid.replace(catalogBlock(locked, "versions"), ""), locked) }
+    }
+
+    @Test fun oldLiteralLocksVerifySyncAndMigrateOnExplicitUpdate() = project { root, cache ->
+        val installer = Installer(root, cache, remote(), {})
+        installer.add(declaration, null, null, false)
+        val current = locks(readText(root / "ktc-plugins.lock.yaml")).getValue("sql")
+        val legacy = current.copy(catalog = current.catalog!!.copy(versionRefs = emptyMap()))
+        writeText(root / "ktc-plugins.lock.yaml", lockYaml(mapOf("sql" to legacy)))
+        writeText(root / "libs.versions.toml", editCatalog(null, emptyList(), listOf(legacy)))
+        installer.status(verify = true)
+        deleteTree(root / "plugins/sql")
+        installer.sync()
+        installer.status(verify = true)
+        assertEquals(legacy, locks(readText(root / "ktc-plugins.lock.yaml")).getValue("sql"))
+        assertFalse("version.ref" in readText(root / "libs.versions.toml"))
+        installer.update("sql", false, null, false)
+        installer.status(verify = true)
+        assertEquals(current, locks(readText(root / "ktc-plugins.lock.yaml")).getValue("sql"))
+        assertTrue("version.ref" in readText(root / "libs.versions.toml"))
+        installer.remove("sql")
+        assertFalse("ktc-sql" in readText(root / "libs.versions.toml"))
     }
 
 }

@@ -67,7 +67,7 @@ def detekt():
     print('Detekt execution and config artifact resolution passed', flush=True)
 
 def sql():
-    root = consumer('sqldelight')
+    root = consumer('sqldelight-app')
     if args.sql_producer_dir:
         source = args.sql_producer_dir.resolve()
         validated = command(root, [str(binary), 'validate', '--project-dir', str(source), '--plugin', 'sqldelight'])
@@ -83,19 +83,30 @@ def sql():
         assert '$libs.' not in (root / module_path / 'module.yaml').read_text()
         sql_consumer(root)
         return
-    install(root, 'Heapy/kotgent', '2a000743c6e77540e959ba641b7c844f6d10871e', 'sqldelight', module=None)
-    assert (root / 'plugins/sqldelight-gen/.ktc-licenses/LICENSE').is_file()
+    install(root, 'Heapy/ktc-sqldelight', '0686ee58431b6477fa92fa380b5d321f21e1a8b8', 'sqldelight', module=None)
+    assert (root / 'plugins/sqldelight/.ktc-licenses/LICENSE').is_file()
+    catalog = (root / 'libs.versions.toml').read_text()
+    assert catalog.count('"2.3.2"') == 1, catalog
+    assert catalog.count('version.ref = "ktc-sqldelight-sqldelight"') == 4, catalog
     command(root, [str(binary), 'verify', '--cache-dir', str(cache)])
-    sql_consumer(root)
+    sql_consumer(root, exported_catalog=True)
 
-def sql_consumer(root):
-    write(root, 'project.yaml', 'modules: [plugins/sqldelight-gen]\nplugins: [//plugins/sqldelight-gen]\n')
-    write(root, 'module.yaml', 'product: jvm/lib\ndependencies:\n  - app.cash.sqldelight:runtime:2.3.2\nplugins:\n  sqldelight-gen: enabled\n')
+def sql_consumer(root, exported_catalog=False):
+    if exported_catalog:
+        module_path = 'plugins/sqldelight'
+        dependency = '$libs.ktc.sqldelight.runtime'
+        configuration = '  sqldelight:\n    enabled: true\n    packageName: io.kotgent.db\n    className: KotgentDatabase\n'
+    else:
+        module_path = 'plugins/sqldelight-gen'
+        dependency = 'app.cash.sqldelight:runtime:2.3.2'
+        configuration = '  sqldelight-gen: enabled\n'
+    write(root, 'project.yaml', f'modules: [{module_path}]\nplugins: [//{module_path}]\n')
+    write(root, 'module.yaml', f'product: jvm/lib\ndependencies:\n  - {dependency}\nplugins:\n{configuration}')
     write(root, 'sqldelight/io/kotgent/db/Item.sq', 'CREATE TABLE item (id INTEGER NOT NULL PRIMARY KEY);\n\nselectAll:\nSELECT * FROM item;\n')
-    output = command(root, [str(root / 'kotlin'), 'build', '-m', 'sqldelight'])
+    output = command(root, [str(root / 'kotlin'), 'build', '-m', root.name])
     # Root module name is its directory basename; generated sources compile with consumer dependencies.
     assert list((root / 'build').rglob('KotgentDatabase.kt')), output
-    packaging = 'local self-contained producer' if args.sql_producer_dir else 'installed producer manifest'
+    packaging = 'exported catalog version references' if exported_catalog else 'local self-contained producer'
     print(f'SQLDelight generation and generated-source compilation passed with {packaging}', flush=True)
 
 failures = []

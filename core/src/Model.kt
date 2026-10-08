@@ -134,8 +134,9 @@ fun locks(text: String): Map<String, Locked> = schema(text).required("plugins").
         Producer(p.text("sha256"), safeName(p.text("plugin")))
     }
     val catalog = m["catalog"]?.map()?.let { c ->
-        c.keysAllowed("source", "sha256", "file", "libraries")
-        LockedCatalog(c.text("source"), c.text("sha256"), c.required("libraries").map().mapValues { it.value.string() }, c.text("file"))
+        c.keysAllowed("source", "sha256", "file", "libraries", "versionRefs")
+        LockedCatalog(c.text("source"), c.text("sha256"), c.required("libraries").map().mapValues { it.value.string() }, c.text("file"),
+            c["versionRefs"]?.map()?.mapValues { it.value.string() }.orEmpty())
     }
     Locked(m.text("repository"), m.text("declarationSha256"), m.text("commit"), m.text("sourcePath"), m.text("destination"), m.text("mode"), m.text("pluginId"), producer, m.text("treeSha256"), files, catalog)
 }
@@ -153,6 +154,10 @@ fun lockYaml(entries: Map<String, Locked>): String = buildString {
             if (c.libraries.isEmpty()) appendLine("      libraries: {}") else {
                 appendLine("      libraries:")
                 c.libraries.entries.sortedBy { it.key }.forEach { (alias, coordinates) -> appendLine("        ${quote(alias)}: ${quote(coordinates)}") }
+            }
+            if (c.versionRefs.isNotEmpty()) {
+                appendLine("      versionRefs:")
+                c.versionRefs.entries.sortedBy { it.key }.forEach { (alias, ref) -> appendLine("        ${quote(alias)}: ${quote(ref)}") }
             }
         }
         appendLine("    files:")

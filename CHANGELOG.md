@@ -5,6 +5,24 @@ separately from tagged releases.
 
 ## [Unreleased]
 
+### Changed
+
+- Exported libraries preserve producer `version.ref` aliases in managed `[versions]`
+  entries under the plugin prefix instead of repeating literal versions. Libraries
+  sharing an alias share its version; independent aliases remain separate even when
+  their values match. Inline versions remain inline.
+- Catalog updates, removal, collision checks and drift detection cover managed
+  version entries as well as libraries, preserving user entries and comments.
+- SQLDelight runtime smoke checks compile a consumer using exported catalog version
+  references from the pinned `Heapy/ktc-sqldelight` producer.
+
+### Compatibility
+
+- Existing lockfiles remain supported. `sync` preserves their literal catalog format;
+  an explicit `update` adopts producer version references. Locks using references
+  record a new `catalog.versionRefs` field, which older installers reject; update
+  consumer launchers before adopting this format.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added

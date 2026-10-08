@@ -264,11 +264,21 @@ Exports use `ktc-<pluginId>-<producerAlias>`, with dots and underscores changed 
 hyphens. The prefix follows the plugin ID, independently of `--name`. For example:
 
 ```toml
+[versions]
+# ktc-plugins begin sqldelight versions
+ktc-sqldelight-sqldelight = "2.3.2"
+# ktc-plugins end sqldelight versions
+
 [libraries]
 # ktc-plugins begin sqldelight
-ktc-sqldelight-sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version = "2.3.2" }
+ktc-sqldelight-sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "ktc-sqldelight-sqldelight" }
 # ktc-plugins end sqldelight
 ```
+
+Producer `version.ref` aliases are exported under the same plugin prefix in a managed
+`[versions]` block. Libraries sharing a producer version alias share its exported reference;
+independent aliases remain independent even when their values match. Inline versions remain inline.
+Only versions referenced by exported libraries are added.
 
 The application explicitly selects dependencies, for example
 `$libs.ktc.sqldelight.sqldelight.runtime`. Exporting a driver only adds a catalog
@@ -277,23 +287,25 @@ version remain independent.
 
 The installer edits the existing `libs.versions.toml` or `gradle/libs.versions.toml`,
 or creates the root file if neither exists. Having both is an error. Existing files
-must use one plain `[libraries]` header (or have no libraries table yet); unsupported
-layouts fail without changes. User entries and comments stay intact. Managed entries
+must use one plain header for each managed `[libraries]` / `[versions]` table (or omit
+the table); unsupported layouts fail without changes. User entries and comments stay intact. Managed entries
 use flat inline tables and double quotes for Kotlin Toolchain 0.13.0 compatibility.
 
 The lockfile records the producer catalog path/digest, consumer catalog path and
-resolved exports. Source, catalog and lock updates share one transaction and appear
-in `--dry-run`/`diff`. Updates and removal replace/delete only unchanged managed
+resolved exports and version references. Source, catalog and lock updates share one
+transaction and appear in `--dry-run`/`diff`. Updates and removal replace/delete only unchanged managed
 blocks; a pre-existing alias is a conflict even if its coordinates match. Separators
 are normalized when detecting collisions. Deleted/edited blocks and moved catalogs
 must be restored before `update`, `sync` or `remove`; `status`/`verify` report drift.
 `sync --offline` restores missing plugin sources using locked exports and the cached
 producer archive without resolving newer versions. Keep the consumer catalog in Git.
-Removal leaves the catalog file and any empty `[libraries]` table in place. Dependency
+Removal leaves the catalog file and any empty `[libraries]` / `[versions]` tables in place. Dependency
 references in consumer modules are user-owned and must be removed separately.
 
-Existing manifests and locks without catalogs remain supported. Older installers
-reject the new `catalog` fields; update the consumer launcher before adopting them.
+Existing manifests and locks without catalogs or version references remain supported.
+`sync` preserves the literal format of older locks; an explicit `update` adopts the producer
+version references. Older installers reject the new lock fields; update the consumer launcher
+before adopting them.
 TOML is parsed using [ktoml-core 0.7.1](https://github.com/orchestr7/ktoml).
 
 ## Cache and platform support
@@ -352,9 +364,10 @@ exact binaries and prepares a **draft** GitHub release on a matching version tag
 Publication is a separate maintainer step; no consumer wrapper is silently upgraded.
 
 `scripts/plugin-runtime-smoke.py BINARY` installs exact commits from the
-[producer draft PRs](docs/0.2.0.md) through their manifests and executes Quarkus packaging,
-detekt checks and SQLDelight generation/compilation in isolated consumers. SQLDelight
-uses its self-contained dependencies without fixture substitutions. The acceptance
+[Quarkus/detekt producer draft PRs](docs/0.2.0.md) and `Heapy/ktc-sqldelight` through their
+manifests and executes Quarkus packaging, detekt checks and SQLDelight generation/compilation
+in isolated consumers. SQLDelight verifies shared exported `version.ref` entries and compiles
+generated sources against the exported `$libs.ktc.sqldelight.runtime` dependency. The acceptance
 script also checks that its historical catalog-dependent module is rejected.
 Pass `--toolchain-wrapper PATH` and `--plugins quarkus detekt` to repeat
 those checks with the producers' 0.12.2 wrapper.

@@ -71,7 +71,11 @@ class Installer(
         val missing = locked.filterValues { !fs.exists(contained(root, it.destination)) }
         locked.values.forEach { verifyInstalled(it, allowMissing = true); ensureOwnership(it, it) }
         val prepared = missing.map { (name, l) ->
-            val p = bindCatalog(prepare(declarations.getValue(name), l.commit, remote.archive(l.repository, l.commit), report), l)
+            var p = bindCatalog(prepare(declarations.getValue(name), l.commit, remote.archive(l.repository, l.commit), report), l)
+            // Sync preserves the catalog format of older locks; update explicitly adopts version references.
+            if (l.catalog != null && l.catalog.versionRefs.isEmpty()) {
+                p = p.copy(lock = p.lock.copy(catalog = p.lock.catalog?.copy(versionRefs = emptyMap())))
+            }
             checkInstall(p.lock == l) { "Cached/upstream contents do not match the lockfile for $name" }
             ensureOwnership(p.lock, l)
             p

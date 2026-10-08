@@ -129,10 +129,14 @@ fun prepareRepository(declaration: Declaration, commit: String, repo: Map<String
                 payload[path] = contents.copy(bytes = resolveCatalogYaml(contents.bytes.decodeToString(), resolver).encodeToByteArray())
             }
         }
-        val exports = spec.exports.associate { alias ->
-            catalogAlias("ktc-${id.replace('.', '-').replace('_', '-')}-${alias.replace('.', '-').replace('_', '-')}") to resolver.resolve(alias)
+        fun exportedAlias(alias: String) = catalogAlias("ktc-${id.replace('.', '-').replace('_', '-')}-${alias.replace('.', '-').replace('_', '-')}")
+        val exports = spec.exports.associate { alias -> exportedAlias(alias) to resolver.resolve(alias) }
+        val refs = spec.exports.mapNotNull { alias -> resolver.versionRef(alias)?.let { alias to it } }.toMap()
+        checkInstall(refs.values.distinct().map(::exportedAlias).distinct().size == refs.values.distinct().size) {
+            "Catalog version aliases have colliding accessors"
         }
-        LockedCatalog(spec.file, file.record.sha256, exports)
+        LockedCatalog(spec.file, file.record.sha256, exports,
+            versionRefs = refs.entries.associate { (alias, ref) -> exportedAlias(alias) to exportedAlias(ref) })
     }
     validatePortable(payload)
     val licenses = declaration.licenseFiles ?: entry?.get("licenseFiles")?.list()?.map { it.string() } ?: repo.keys.filter { '/' !in it && Regex("(?i)(LICENSE|NOTICE|COPYING)(\\.[a-z]+)?").matches(it) }
