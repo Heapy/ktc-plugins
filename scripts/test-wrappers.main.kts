@@ -97,7 +97,37 @@ temporary("ktc wrapper test ") { tmp ->
     cachedBinary.appendText("corrupt")
     val corrupt = run("--version")
     check(corrupt.exitCode != 0 && "checksum mismatch" in corrupt.output) { corrupt.output }
-    if (!windows) {
+    val downloads = tmp.resolve("download calls").apply { mkdir() }
+    environment["KTC_TEST_SOURCE_BINARY"] = binary.path
+    if (windows) {
+        // Shadow only acquisition in the test copy. The real bootstrap body still
+        // verifies bytes, publishes the temporary file and returns to the batch launcher.
+        val launcher = File(wrapper)
+        val text = launcher.readText()
+        val marker = text.lastIndexOf("# POWERSHELL")
+        check(marker >= 0)
+        val acquisition = $$"""
+            function Invoke-WebRequest {
+                param([switch]$UseBasicParsing, [string]$Uri, [string]$OutFile, [int]$TimeoutSec)
+                $expected = "https://github.com/Heapy/ktc-plugins/releases/download/v${env:ktc_version}/ktc-plugins-${env:ktc_version}-windows-x64.exe"
+                if ($Uri -cne $expected -or !$UseBasicParsing -or $TimeoutSec -le 0) { throw "Unexpected download request: $Uri" }
+                [IO.File]::WriteAllText((Join-Path $env:KTC_TEST_DOWNLOADS ([guid]::NewGuid().ToString('N'))), $Uri)
+                if ($env:KTC_TEST_BARRIER) {
+                    [IO.File]::WriteAllText((Join-Path $env:KTC_TEST_BARRIER ([guid]::NewGuid().ToString('N'))), 'ready')
+                    $wait = [Diagnostics.Stopwatch]::StartNew()
+                    while ([IO.Directory]::GetFiles($env:KTC_TEST_BARRIER).Length -lt 4) {
+                        if ($wait.Elapsed.TotalSeconds -gt 30) { throw 'Timed out waiting for concurrent downloads' }
+                        [Threading.Thread]::Sleep(10)
+                    }
+                }
+                [IO.File]::Copy($env:KTC_TEST_SOURCE_BINARY, $OutFile)
+                if ($env:KTC_TEST_CORRUPT -eq '1') { [IO.File]::AppendAllText($OutFile, 'corrupt') }
+            }
+        """.trimIndent()
+        val start = marker + "# POWERSHELL".length
+        launcher.writeText(text.substring(0, start) + "\r\n" + acquisition + "\r\n" + text.substring(start))
+        environment["KTC_TEST_DOWNLOADS"] = downloads.path
+    } else {
         val stub = tmp.resolve("curl stub").apply { mkdir() }
         stub.resolve("curl").apply {
             writeText($$"""
@@ -115,14 +145,28 @@ temporary("ktc wrapper test ") { tmp ->
             check(setExecutable(true, false))
         }
         environment["PATH"] = stub.path + File.pathSeparator + System.getenv("PATH")
-        environment["KTC_TEST_SOURCE_BINARY"] = binary.path
-        check(cachedBinary.delete())
-        concurrentVersions()
-        check(cachedBinary.delete())
-        environment["KTC_TEST_CORRUPT"] = "1"
-        val downloaded = run("--version")
-        check(downloaded.exitCode != 0 && "checksum mismatch" in downloaded.output) { downloaded.output }
-        check(!cachedBinary.exists())
     }
+    fun noTemporaryDownloads() = check(cached.listFiles().orEmpty().none { it.name.startsWith(".download") }) { "Temporary download was not removed" }
+    check(cachedBinary.delete())
+    val firstDownload = run("--version")
+    check(firstDownload.exitCode == 0 && firstDownload.output.trim() == version) { firstDownload.output }
+    if (windows) check(downloads.listFiles().orEmpty().size == 1) { "First launch did not acquire bytes" }
+    noTemporaryDownloads()
+    println("PASS: first download from empty cache")
+    check(cachedBinary.delete())
+    if (windows) environment["KTC_TEST_BARRIER"] = tmp.resolve("concurrent download barrier").apply { mkdir() }.path
+    concurrentVersions()
+    environment.remove("KTC_TEST_BARRIER")
+    if (windows) check(downloads.listFiles().orEmpty().size == 5) { "All four Windows launches must race to publish downloaded bytes" }
+    noTemporaryDownloads()
+    println("PASS: concurrent bootstrap from empty cache")
+    check(cachedBinary.delete())
+    environment["KTC_TEST_CORRUPT"] = "1"
+    val downloaded = run("--version")
+    check(downloaded.exitCode != 0 && "Downloaded executable checksum mismatch" in downloaded.output) { downloaded.output }
+    check(!cachedBinary.exists()) { "Corrupted download was published" }
+    if (windows) check(downloads.listFiles().orEmpty().size == 6) { "Corrupted-download path was not exercised" }
+    noTemporaryDownloads()
+    println("PASS: corrupt download rejected without publication or temporary files")
     println("Wrapper paths, argument forwarding, concurrent bootstrap/offline launches and checksum rejection passed")
 }
