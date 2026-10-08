@@ -4,19 +4,18 @@ A Kotlin/Native source installer for JetBrains Kotlin Toolchain build plugins.
 It downloads a GitHub repository at an explicit tag, branch, or full commit SHA,
 installs a self-contained plugin module, and registers it in your project.
 
-The source tree implements **0.2.0**. The published predecessor is **0.1.0**;
-build locally to use the new commands until a 0.2.0 release is published.
+See [CHANGELOG.md](CHANGELOG.md) for release history and compatibility notes.
 
-## Get version 0.1.0
+## Get version 0.2.0
 
-Download the generated launchers from the [0.1.0 release](https://github.com/Heapy/ktc-plugins/releases/tag/v0.1.0)
+Download the generated launchers from the [0.2.0 release](https://github.com/Heapy/ktc-plugins/releases/tag/v0.2.0)
 into your consumer project and commit them:
 
 ```sh
 curl --fail --location --output ktc-plugins \
-  https://github.com/Heapy/ktc-plugins/releases/download/v0.1.0/ktc-plugins
+  https://github.com/Heapy/ktc-plugins/releases/download/v0.2.0/ktc-plugins
 curl --fail --location --output ktc-plugins.bat \
-  https://github.com/Heapy/ktc-plugins/releases/download/v0.1.0/ktc-plugins.bat
+  https://github.com/Heapy/ktc-plugins/releases/download/v0.2.0/ktc-plugins.bat
 chmod +x ktc-plugins
 ./ktc-plugins --help
 ```
@@ -146,8 +145,7 @@ Choose an exact **published stable** version. The updater verifies GitHub asset 
 both project launchers in one transaction. Existing launchers must match their official
 release (CRLF/LF checkout conversion is accepted); local changes and development
 templates are refused. Review and commit the result. The running executable is not
-replaced; subsequent launcher invocations select the chosen release. Version 0.1.0
-can be used to exercise the updater before 0.2.0 publication.
+replaced; subsequent launcher invocations select the chosen release.
 
 ## Committed or downloaded sources
 

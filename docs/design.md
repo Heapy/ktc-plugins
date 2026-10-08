@@ -3,7 +3,8 @@
 ## 0.2.0 implementation
 
 Version 0.1.0 was published on 2026-10-05 after all four runtime targets passed CI.
-The current source tree implements the next version; 0.2.0 publication is separate.
+Version 0.2.0 adds the lifecycle commands below and the catalog contract extension
+described in the next section. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 - `diff` and mutation dry-runs report unified source/configuration/lockfile changes;
   binary and large-file changes are summarized by size/digest.
