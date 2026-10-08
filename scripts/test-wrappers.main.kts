@@ -26,6 +26,12 @@ fun copy(source: File, destination: File) {
 }
 
 data class CommandResult(val exitCode: Int, val output: String)
+fun batch(file: String, arguments: List<String>): List<String> {
+    val words = listOf(file) + arguments
+    require(words.none { '"' in it || '\r' in it || '\n' in it }) { "Unsupported batch argument: $words" }
+    // /s removes the outer quote pair; keep the executable and each argument quoted inside it.
+    return listOf("cmd.exe", "/d", "/s", "/c", words.joinToString(" ", prefix = "\"", postfix = "\"") { "\"$it\"" })
+}
 fun command(directory: File, arguments: List<String>, environment: Map<String, String?> = emptyMap(), timeout: Long = 600): CommandResult {
     val log = Files.createTempFile("ktc-command-", ".log").toFile()
     try {
@@ -46,8 +52,8 @@ fun command(directory: File, arguments: List<String>, environment: Map<String, S
 
 fun toolchain(project: File, vararg arguments: String, succeeds: Boolean = true, diagnostic: String? = null): String {
     val wrapper = project.resolve(if (windows) "kotlin.bat" else "kotlin").absolutePath
-    val invocation = if (windows) listOf("cmd.exe", "/c", wrapper) else listOf("sh", wrapper)
-    val result = command(project, invocation + arguments)
+    val invocation = if (windows) batch(wrapper, arguments.toList()) else listOf("sh", wrapper) + arguments
+    val result = command(project, invocation)
     check((result.exitCode == 0) == succeeds) { "Unexpected exit ${result.exitCode}: ${arguments.toList()}\n${result.output}" }
     check(diagnostic == null || diagnostic in result.output) { "Missing diagnostic $diagnostic:\n${result.output}" }
     println("PASS: ${arguments.joinToString(" ")} (${if (succeeds) "success" else "expected failure"})")
@@ -71,8 +77,9 @@ temporary("ktc wrapper test ") { tmp ->
     val output = tmp.resolve("release bundle")
     // Use the same distribution that is running this script, not the Toolchain CLI on PATH.
     val runner = File(System.getProperty("kotlin.home"), "bin/${if (windows) "kotlinr.bat" else "kotlinr"}")
-    val invocation = if (windows) listOf("cmd.exe", "/c", runner.path) else listOf(runner.path)
-    val packaged = command(repo, invocation + listOf(repo.resolve("scripts/package-release.main.kts").path, "--version", version, "--binaries", binaries.path, "--output", output.path))
+    val packageArguments = listOf(repo.resolve("scripts/package-release.main.kts").path, "--version", version, "--binaries", binaries.path, "--output", output.path)
+    val invocation = if (windows) batch(runner.path, packageArguments) else listOf(runner.path) + packageArguments
+    val packaged = command(repo, invocation)
     check(packaged.exitCode == 0) { packaged.output }
     val cached = tmp.resolve("offline binary cache/$version/$target").apply { mkdirs() }
     val name = "ktc-plugins-$version-$target" + if (windows) ".exe" else ""
@@ -80,7 +87,7 @@ temporary("ktc wrapper test ") { tmp ->
     if (!windows) check(cachedBinary.setExecutable(true, false))
     val environment = mutableMapOf<String, String?>("KTC_PLUGINS_BINARY_CACHE" to tmp.resolve("offline binary cache").path, "KTC_PLUGINS_BINARY" to null)
     val wrapper = output.resolve(if (windows) "ktc-plugins.bat" else "ktc-plugins").path
-    fun run(vararg arguments: String) = command(tmp, (if (windows) listOf("cmd.exe", "/c", wrapper) else listOf(wrapper)) + arguments, environment)
+    fun run(vararg arguments: String) = command(tmp, if (windows) batch(wrapper, arguments.toList()) else listOf(wrapper) + arguments, environment)
     fun concurrentVersions() {
         java.util.concurrent.Executors.newFixedThreadPool(4).use { pool ->
             val futures = (1..4).map { pool.submit<CommandResult> { run("--version") } }
