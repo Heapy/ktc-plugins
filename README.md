@@ -6,6 +6,9 @@ installs a self-contained plugin module, and registers it in your project.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and compatibility notes.
 
+This checkout prepares **0.3.0**. The download instructions below use the latest
+published release, **0.2.0**; build locally to use the upcoming release before publication.
+
 ## Get version 0.2.0
 
 Download the generated launchers from the [0.2.0 release](https://github.com/Heapy/ktc-plugins/releases/tag/v0.2.0)
@@ -346,10 +349,10 @@ merging remain unsupported. Installation does not execute plugin code; subsequen
 ./kotlin test -m core --platform jvm --platform macosArm64
 ./kotlin build -m cli-macos -m cli-linux -m cli-windows -v release
 kotlinr scripts/stage-binaries.main.kts macosArm64 linuxX64 linuxArm64 mingwX64
-kotlinr scripts/package-release.main.kts --version 0.2.0 \
+kotlinr scripts/package-release.main.kts --version 0.3.0 \
   --binaries build/binaries --output build/release
-kotlinr scripts/smoke.main.kts build/binaries/ktc-plugins-0.2.0-macos-arm64
-kotlinr scripts/test-wrappers.main.kts build/binaries/ktc-plugins-0.2.0-macos-arm64
+kotlinr scripts/smoke.main.kts build/binaries/ktc-plugins-0.3.0-macos-arm64
+kotlinr scripts/test-wrappers.main.kts build/binaries/ktc-plugins-0.3.0-macos-arm64
 ```
 
 Cross-compilation requires a supported Toolchain compiler host. Build individual

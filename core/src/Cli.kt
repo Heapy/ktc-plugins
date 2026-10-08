@@ -1,7 +1,7 @@
 package io.heapy.ktcplugins
 
 
-const val VERSION = "0.2.0"
+const val VERSION = "0.3.0"
 private val usage = """
 ktc-plugins $VERSION — install GitHub sources as local Kotlin Toolchain plugins
 

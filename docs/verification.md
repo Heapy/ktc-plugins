@@ -1,5 +1,26 @@
 # Implementation verification
 
+## Installer 0.3.0 preparation (2026-10-08)
+
+Verified on macOS ARM64 with Toolchain 0.13.0, native compiler Kotlin 2.4.20,
+and the Kotlin 2.4.21 script runner:
+
+- `./kotlin test -m core --platform jvm --platform macosArm64`: 61 tests passed
+  on each runtime (122 executions), including catalog version references,
+  nested template validation and verified release inventories.
+- `./kotlin build -m cli-macos -v release`: the rebuilt executable reports `0.3.0`.
+- `scripts/test-wrappers.main.kts`: generated 0.3.0 launchers pass offline-cache,
+  argument forwarding, concurrent/empty-cache bootstrap and checksum-rejection checks.
+- `scripts/smoke.main.kts`: real pinned installs, offline restore, diff/outdated,
+  safe removal, producer validation and verified published-launcher updates pass.
+- The rebuilt installer validates the current BCV, benchmark, Dokka, Jib, Kover,
+  ktfmt, ktlint, Quarkus, SQLDelight and detekt producer manifests unchanged.
+  Producer schema remains 1; new `catalog.versionRefs` consumer lock metadata
+  requires installer 0.3.0 or newer.
+
+Linux and Windows runtime checks are assigned to CI. The version bump prepares
+0.3.0; published launcher assets are produced separately by the tagged release workflow.
+
 ## Catalog export extension (2026-10-08)
 
 Verified on macOS ARM64 with Toolchain 0.13.0 and Kotlin 2.4.20:

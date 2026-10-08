@@ -5,6 +5,8 @@ separately from tagged releases.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-08
+
 ### Changed
 
 - Exported libraries preserve producer `version.ref` aliases in managed `[versions]`
@@ -15,6 +17,17 @@ separately from tagged releases.
   version entries as well as libraries, preserving user entries and comments.
 - SQLDelight runtime smoke checks compile a consumer using exported catalog version
   references from the pinned `Heapy/ktc-sqldelight` producer.
+- Verification, packaging and CI scripts now use Kotlin `.main.kts` with the
+  checksum-pinned Kotlin 2.4.21 runner instead of Python.
+
+### Fixed
+
+- Producer validation checks dependencies and nested `apply` references in copied
+  plugin templates, rejecting unavailable helper files and unresolved catalog references.
+- Wrapper updates accept additional release assets only when every checksum entry
+  agrees with the verified GitHub asset inventory.
+- Windows wrapper tests cover empty-cache downloads, concurrent bootstrap and
+  corrupt downloads; runner checksum validation handles Windows path escaping.
 
 ### Compatibility
 
@@ -84,6 +97,7 @@ separately from tagged releases.
 - Unix and Windows launchers with pinned SHA-256 verification, native release
   binaries, checksums and CI checks across all four runtime targets.
 
-[Unreleased]: https://github.com/Heapy/ktc-plugins/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Heapy/ktc-plugins/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Heapy/ktc-plugins/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Heapy/ktc-plugins/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Heapy/ktc-plugins/releases/tag/v0.1.0
