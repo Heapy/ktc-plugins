@@ -15,9 +15,9 @@ runs:
         curl --fail --location --retry 3 https://github.com/JetBrains/kotlin/releases/download/v2.4.21/kotlin-compiler-2.4.21.zip -o "$destination/compiler.zip"
         checksum=7cc140e76daf416a0424a5557f99afd7ca89ebd463ea1101261e3e01c33e75cd
         if command -v sha256sum >/dev/null 2>&1; then
-          actual=$(sha256sum "$destination/compiler.zip" | cut -d ' ' -f 1)
+          actual=$(sha256sum < "$destination/compiler.zip" | cut -d ' ' -f 1)
         else
-          actual=$(shasum -a 256 "$destination/compiler.zip" | cut -d ' ' -f 1)
+          actual=$(shasum -a 256 < "$destination/compiler.zip" | cut -d ' ' -f 1)
         fi
         test "$actual" = "$checksum"
         unzip -q "$destination/compiler.zip" -d "$destination"
