@@ -6,19 +6,16 @@ installs a self-contained plugin module, and registers it in your project.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and compatibility notes.
 
-This checkout prepares **0.3.0**. The download instructions below use the latest
-published release, **0.2.0**; build locally to use the upcoming release before publication.
+## Get version 0.3.0
 
-## Get version 0.2.0
-
-Download the generated launchers from the [0.2.0 release](https://github.com/Heapy/ktc-plugins/releases/tag/v0.2.0)
+Download the generated launchers from the [0.3.0 release](https://github.com/Heapy/ktc-plugins/releases/tag/v0.3.0)
 into your consumer project and commit them:
 
 ```sh
 curl --fail --location --output ktc-plugins \
-  https://github.com/Heapy/ktc-plugins/releases/download/v0.2.0/ktc-plugins
+  https://github.com/Heapy/ktc-plugins/releases/download/v0.3.0/ktc-plugins
 curl --fail --location --output ktc-plugins.bat \
-  https://github.com/Heapy/ktc-plugins/releases/download/v0.2.0/ktc-plugins.bat
+  https://github.com/Heapy/ktc-plugins/releases/download/v0.3.0/ktc-plugins.bat
 chmod +x ktc-plugins
 ./ktc-plugins --help
 ```
@@ -139,8 +136,8 @@ The installer changes no Git index entries; commit vendored deletions yourself.
 ## Update project launchers
 
 ```sh
-./ktc-plugins wrapper update --version 0.2.0 --dry-run
-./ktc-plugins wrapper update --version 0.2.0
+./ktc-plugins wrapper update --version 0.3.0 --dry-run
+./ktc-plugins wrapper update --version 0.3.0
 ```
 
 Choose an exact **published stable** version. The updater verifies GitHub asset digests,
