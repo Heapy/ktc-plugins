@@ -33,6 +33,20 @@ Client and lockfile schemas remain version 1 and preserve 0.1.0 installations.
 The sections below record the original MVP contract and pinned compatibility audit;
 the 0.2.0 changes above supersede its dry-run and uninstall limitations.
 
+## Wrapper compatibility after 0.2.0
+
+The updated source requires all four known native binaries and both launchers in
+`SHA256SUMS`, and permits additional files only when each checksum matches a unique
+uploaded asset from the official GitHub release. Extra binaries are neither
+downloaded nor executed by the updater. Known launcher pins and version checks remain
+mandatory.
+
+The published 0.2.0 updater still requires the exact four-target inventory. The first
+release carrying this fix must retain those four targets so existing clients can
+obtain the fix through `wrapper update`. Add another target only in a later release;
+0.2.0 clients then need the intermediate release first, or manual launcher replacement.
+This source change does not modify an already published release.
+
 ## Catalog contract extension (2026-10-08)
 
 The [producer catalog contract](../README.md#producer-catalogs-and-exported-libraries)

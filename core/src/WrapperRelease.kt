@@ -62,8 +62,8 @@ class GitHubReleaseSource(private val github: GitHub) : ReleaseSource {
             checkInstall(sums.put(match.groupValues[2], match.groupValues[1]) == null) { "Duplicate SHA256SUMS entry" }
         }
         val names = setOf("ktc-plugins", "ktc-plugins.bat") + targets.map { "ktc-plugins-$version-$it" + if (it == "windows-x64") ".exe" else "" }
-        checkInstall(sums.keys == names) { "Unexpected/missing SHA256SUMS inventory" }
-        names.forEach { checkInstall(sums[it] == digest(it)) { "Release asset digest differs from SHA256SUMS: $it" } }
+        checkInstall(sums.keys.containsAll(names)) { "Missing required SHA256SUMS entries" }
+        sums.forEach { (name, hash) -> checkInstall(hash == digest(name)) { "Release asset digest differs from SHA256SUMS: $name" } }
         val files = listOf("ktc-plugins", "ktc-plugins.bat").associateWith { Payload(download(it), executable = it == "ktc-plugins") }
         return LauncherRelease(files, sums).also { validateLauncherRelease(version, it) }
     }
