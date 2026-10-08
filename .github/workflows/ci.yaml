@@ -33,6 +33,7 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-kotlin-script
       - uses: Heapy/setup-ktc@cc63216665ce07ce0709fe52ef4a4b0b63aeaddc # v1.1.0
         with:
           version: auto
@@ -43,13 +44,13 @@ jobs:
           platforms: jvm, ${{ matrix.platform }}
           build: false
       - run: ./kotlin build -m '${{ matrix.module }}' --platform '${{ matrix.platform }}' -v release
-      - run: python scripts/stage-binaries.py '${{ matrix.platform }}'
+      - run: kotlinr scripts/stage-binaries.main.kts '${{ matrix.platform }}'
       - name: Cross-compile ARM64 application and tests
         if: matrix.target == 'linux-x64'
         run: |
           ./kotlin build -m cli-linux --platform linuxArm64 -v release
           ./kotlin task :core:linkLinuxArm64TestDebug
-          python scripts/stage-binaries.py linuxArm64
+          kotlinr scripts/stage-binaries.main.kts linuxArm64
           cp build/tasks/_core_linkLinuxArm64TestDebug/core_test.kexe build/binaries/core-tests-linux-arm64
       - name: Run native CLI and wrappers
         env:
@@ -59,13 +60,13 @@ jobs:
           target='${{ matrix.target }}'
           if [[ $target == windows-* ]]; then suffix='.exe'; fi
           binary="build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-${{ matrix.target }}$suffix"
-          python scripts/smoke.py "$binary"
-          python scripts/test-wrappers.py "$binary"
+          kotlinr scripts/smoke.main.kts "$binary"
+          kotlinr scripts/test-wrappers.main.kts "$binary"
       - name: Execute installed plugin compatibility fixtures
         if: matrix.target == 'macos-arm64'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/plugin-runtime-smoke.py "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-macos-arm64"
+        run: kotlinr scripts/plugin-runtime-smoke.main.kts "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-macos-arm64"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: binaries-${{ matrix.target }}
@@ -76,6 +77,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-kotlin-script
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: binaries-linux-x64
@@ -83,8 +85,8 @@ jobs:
       - run: |
           chmod +x build/binaries/*
           build/binaries/core-tests-linux-arm64
-          python3 scripts/smoke.py "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-linux-arm64"
-          python3 scripts/test-wrappers.py "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-linux-arm64"
+          kotlinr scripts/smoke.main.kts "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-linux-arm64"
+          kotlinr scripts/test-wrappers.main.kts "build/binaries/ktc-plugins-$KTC_PLUGINS_VERSION-linux-arm64"
         env:
           GITHUB_TOKEN: ${{ github.token }}
   bundle:
@@ -92,12 +94,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-kotlin-script
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: binaries-*
           merge-multiple: true
           path: build/binaries
-      - run: python3 scripts/package-release.py --version "$KTC_PLUGINS_VERSION" --binaries build/binaries --output build/release
+      - run: kotlinr scripts/package-release.main.kts --version "$KTC_PLUGINS_VERSION" --binaries build/binaries --output build/release
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-bundle

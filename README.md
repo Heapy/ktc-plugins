@@ -345,11 +345,11 @@ merging remain unsupported. Installation does not execute plugin code; subsequen
 ```sh
 ./kotlin test -m core --platform jvm --platform macosArm64
 ./kotlin build -m cli-macos -m cli-linux -m cli-windows -v release
-python3 scripts/stage-binaries.py macosArm64 linuxX64 linuxArm64 mingwX64
-python3 scripts/package-release.py --version 0.2.0 \
+kotlinr scripts/stage-binaries.main.kts macosArm64 linuxX64 linuxArm64 mingwX64
+kotlinr scripts/package-release.main.kts --version 0.2.0 \
   --binaries build/binaries --output build/release
-python3 scripts/smoke.py build/binaries/ktc-plugins-0.2.0-macos-arm64
-python3 scripts/test-wrappers.py build/binaries/ktc-plugins-0.2.0-macos-arm64
+kotlinr scripts/smoke.main.kts build/binaries/ktc-plugins-0.2.0-macos-arm64
+kotlinr scripts/test-wrappers.main.kts build/binaries/ktc-plugins-0.2.0-macos-arm64
 ```
 
 Cross-compilation requires a supported Toolchain compiler host. Build individual
@@ -363,7 +363,7 @@ CI builds/tests every target, runs real-source installation smoke checks, packag
 exact binaries and prepares a **draft** GitHub release on a matching version tag.
 Publication is a separate maintainer step; no consumer wrapper is silently upgraded.
 
-`scripts/plugin-runtime-smoke.py BINARY` installs exact commits from the
+`scripts/plugin-runtime-smoke.main.kts BINARY` installs exact commits from the
 [Quarkus/detekt producer draft PRs](docs/0.2.0.md) and `Heapy/ktc-sqldelight` through their
 manifests and executes Quarkus packaging, detekt checks and SQLDelight generation/compilation
 in isolated consumers. SQLDelight verifies shared exported `version.ref` entries and compiles
@@ -376,3 +376,11 @@ SQLDelight producer without rewriting catalog aliases in the fixture.
 
 See [design.md](docs/design.md) for the full contract and plugin compatibility audit,
 and [verification.md](docs/verification.md) for the recorded local results.
+
+## Running verification scripts
+
+The `.main.kts` scripts require JDK 25 and Kotlin 2.4.21+ (`kotlinr` on `PATH`).
+Run them with `kotlinr scripts/<name>.main.kts` from the repository root.
+The Kotlin Toolchain `./kotlin` command is a separate executable. CI installs the script runner
+through `.github/actions/setup-kotlin-script`; the first script run compiles the script and
+resolves any pinned Maven dependencies. Later runs use the local script cache.
