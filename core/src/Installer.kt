@@ -32,7 +32,7 @@ class Installer(
         val current = declarations(); val oldLocks = locks()
         checkInstall((oldLocks.keys - current.keys).isEmpty()) { "Lockfile has undeclared plugins; restore their declarations (uninstall is outside MVP)" }
         val sha = remote.resolve(d.repository, d.ref)
-        val prepared = prepare(d, sha, remote.archive(d.repository, sha), report)
+        val prepared = bindCatalog(prepare(d, sha, remote.archive(d.repository, sha), report), null)
         val name = safeName(alias ?: prepared.lock.pluginId)
         checkInstall(name !in current && name !in oldLocks) { "Plugin '$name' already exists; use update" }
         ensureOwnership(prepared.lock, null)
@@ -56,7 +56,7 @@ class Installer(
             }
             val sha = remote.resolve(d.repository, d.ref)
             checkInstall(old == null || d.ref.kind != "tag" || sha == old.commit || ref != null || d.digest != old.declarationSha256) { "Tag '${d.ref.value}' moved from ${old?.commit} to $sha; select an explicit new ref to accept it" }
-            val p = prepare(d, sha, remote.archive(d.repository, sha), report)
+            val p = bindCatalog(prepare(d, sha, remote.archive(d.repository, sha), report), old)
             checkInstall(old == null || p.lock.destination == old.destination && p.lock.pluginId == old.pluginId) { "Plugin identity/destination changed; migration needs manual review" }
             ensureOwnership(p.lock, old)
             declarations[name] = d; locked[name] = p.lock
@@ -71,7 +71,7 @@ class Installer(
         val missing = locked.filterValues { !fs.exists(contained(root, it.destination)) }
         locked.values.forEach { verifyInstalled(it, allowMissing = true); ensureOwnership(it, it) }
         val prepared = missing.map { (name, l) ->
-            val p = prepare(declarations.getValue(name), l.commit, remote.archive(l.repository, l.commit), report)
+            val p = bindCatalog(prepare(declarations.getValue(name), l.commit, remote.archive(l.repository, l.commit), report), l)
             checkInstall(p.lock == l) { "Cached/upstream contents do not match the lockfile for $name" }
             ensureOwnership(p.lock, l)
             p
@@ -127,6 +127,9 @@ class Installer(
         fun metadata(path: String, value: String) { if (text(path) != value) changes[path] = mapOf("" to Payload(value.encodeToByteArray())) }
         metadata("ktc-plugins.yaml", removeYamlMapEntry(text("ktc-plugins.yaml")!!, "plugins", alias))
         metadata("ktc-plugins.lock.yaml", lockYaml(locked - alias))
+        old.catalog?.takeIf { it.libraries.isNotEmpty() }?.let { c ->
+            metadata(c.file, editCatalog(text(c.file), listOf(old), emptyList()))
+        }
         text("project.yaml")?.let { metadata("project.yaml", unregisterPlugin(it, old.destination)) }
         for ((_, file) in configured) metadata(file, removeYamlMapEntry(text(file)!!, "plugins", old.pluginId, preserveConfiguration = true))
         if (old.mode == "downloaded") {
@@ -163,6 +166,15 @@ class Installer(
         else { Transaction(root).commit(changes, failAfter); report("Updated project launchers to $version; review and commit both files") }
     }
     private fun verifyInstalled(l: Locked, allowMissing: Boolean = false) = verifyInstalledAt(root, l, allowMissing)
+    private fun bindCatalog(p: Prepared, old: Locked?): Prepared {
+        val c = p.lock.catalog ?: return p
+        if (c.libraries.isEmpty()) return p
+        val existing = catalogLocations.filter { fs.exists(contained(root, it)) }
+        checkInstall(existing.size <= 1) { "Both consumer catalog locations exist" }
+        val file = old?.catalog?.takeIf { it.libraries.isNotEmpty() }?.file ?: existing.singleOrNull() ?: catalogLocations.first()
+        checkInstall(existing.isEmpty() || existing.single() == file) { "Managed catalog location changed; restore $file" }
+        return p.copy(lock = p.lock.copy(catalog = c.copy(file = file)))
+    }
     private fun matching(declarations: Map<String, Declaration>, locked: Map<String, Locked>) {
         checkInstall(declarations.isNotEmpty() && declarations.keys == locked.keys) { "Missing/stale lock entries; use add/update to resolve declarations" }
         declarations.forEach { (name, d) -> checkInstall(locked.getValue(name).declarationSha256 == d.digest) { "Stale lock for $name; run update explicitly" } }
@@ -202,10 +214,17 @@ class Installer(
         val changes = linkedMapOf<String, Map<String, Payload>>()
         for (p in prepared) {
             val target = contained(root, p.lock.destination)
-            val pristine = if (fs.exists(target)) try { verifyInstalled(p.lock); true } catch (e: InstallError) { false } else false
+            val pristine = if (fs.exists(target)) try { verifyInstalledAt(root, p.lock.copy(catalog = null)); true } catch (e: InstallError) { false } else false
             if (!pristine) changes[p.lock.destination] = p.payload
         }
         fun metadata(relative: String, content: String) { if (text(relative) != content) changes[relative] = mapOf("" to Payload(content.encodeToByteArray())) }
+        val oldLocks = locks()
+        val changedDestinations = prepared.map { it.lock.destination }.toSet()
+        val oldCatalogs = oldLocks.values.filter { it.destination in changedDestinations && !it.catalog?.libraries.isNullOrEmpty() }
+        val newCatalogs = prepared.map { it.lock }.filter { !it.catalog?.libraries.isNullOrEmpty() }
+        for (file in (oldCatalogs + newCatalogs).map { it.catalog!!.file }.distinct()) {
+            metadata(file, editCatalog(text(file), oldCatalogs.filter { it.catalog!!.file == file }, newCatalogs.filter { it.catalog!!.file == file }))
+        }
         metadata("ktc-plugins.yaml", manifest)
         metadata("ktc-plugins.lock.yaml", lockYaml(locked))
         var project = text("project.yaml")
@@ -230,6 +249,11 @@ class Installer(
     }
 }
 fun verifyInstalledAt(project: Path, l: Locked, allowMissing: Boolean = false) {
+    l.catalog?.takeIf { it.libraries.isNotEmpty() }?.let { c ->
+        val existing = catalogLocations.filter { fs.exists(contained(project, it)) }
+        checkInstall(existing == listOf(c.file)) { "Missing or ambiguous managed catalog: ${c.file}" }
+        verifyCatalog(readText(contained(project, c.file)), l)
+    }
     val target = contained(project, l.destination)
     if (!fs.exists(target)) { checkInstall(allowMissing) { "Missing plugin: ${l.destination}" }; return }
     checkInstall(fs.metadata(target).isDirectory) { "Plugin destination is not a directory" }

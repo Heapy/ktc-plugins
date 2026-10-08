@@ -104,7 +104,7 @@ fun prepareRepository(declaration: Declaration, commit: String, repo: Map<String
     val selected = declaration.plugin ?: if (root?.size == 1) root.keys.single() else null
     if (root != null && declaration.path == null) checkInstall(selected != null) { "Repository declares several plugins; select one with --plugin" }
     val entry = selected?.let { root?.get(it)?.map() ?: if (declaration.path == null) fail("Unknown producer plugin: $it") else null }
-    entry?.keysAllowed("module", "licenseFiles")
+    entry?.keysAllowed("module", "licenseFiles", "catalog")
     val source = declaration.path ?: entry?.text("module") ?: fail("No producer manifest: specify --path (use . for a root plugin)")
     safeRelative(source, true)
     val prefix = if (source == ".") "" else "$source/"
@@ -119,6 +119,21 @@ fun prepareRepository(declaration: Declaration, commit: String, repo: Map<String
     val destination = declaration.destination ?: "plugins/$id"
     validateDestination(destination)
     checkInstall(m["pluginInfo"]?.map()?.optional("id") != null || destination.substringAfterLast('/') == originalName) { "Keep destination basename '$originalName' to preserve the inferred plugin ID" }
+    val catalog = entry?.get("catalog")?.let { node ->
+        val spec = catalogSpec(node)
+        val file = repo[spec.file] ?: fail("Missing producer catalog: ${spec.file}")
+        checkInstall(!file.symbolicLink) { "Producer catalog must not be a symlink" }
+        val resolver = ProducerCatalog(file.bytes.decodeToString())
+        for ((path, contents) in payload.toMap()) {
+            if (path == "module.yaml" || path == "plugin.yaml" || path.endsWith(".module-template.yaml")) {
+                payload[path] = contents.copy(bytes = resolveCatalogYaml(contents.bytes.decodeToString(), resolver).encodeToByteArray())
+            }
+        }
+        val exports = spec.exports.associate { alias ->
+            catalogAlias("ktc-${id.replace('.', '-').replace('_', '-')}-${alias.replace('.', '-').replace('_', '-')}") to resolver.resolve(alias)
+        }
+        LockedCatalog(spec.file, file.record.sha256, exports)
+    }
     validatePortable(payload)
     val licenses = declaration.licenseFiles ?: entry?.get("licenseFiles")?.list()?.map { it.string() } ?: repo.keys.filter { '/' !in it && Regex("(?i)(LICENSE|NOTICE|COPYING)(\\.[a-z]+)?").matches(it) }
     if (licenses.isEmpty()) diagnostic("No license/notice files detected for ${declaration.repository}; check upstream permissions")
@@ -138,7 +153,7 @@ fun prepareRepository(declaration: Declaration, commit: String, repo: Map<String
     val files = payload.mapValues { it.value.record }
     checkInstall(files.isNotEmpty()) { "Empty plugin payload" }
     val producer = if (producerBytes != null && selected != null) Producer(producerBytes.toByteString().sha256().hex(), selected) else null
-    return Prepared(Locked(declaration.repository, declaration.digest, commit, source, destination, declaration.mode, id, producer, treeDigest(files), files), payload)
+    return Prepared(Locked(declaration.repository, declaration.digest, commit, source, destination, declaration.mode, id, producer, treeDigest(files), files, catalog), payload)
 }
 private fun validatePortable(payload: Map<String, Payload>) {
     for ((path, file) in payload.filterKeys { it.endsWith(".yaml") }) {

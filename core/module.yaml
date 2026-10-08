@@ -5,6 +5,7 @@ product:
 dependencies:
   - com.squareup.okio:okio:3.18.2
   - io.heapy.kotaml:kotaml:0.111.0
+  - com.akuleshov7:ktoml-core:0.7.1
 
 aliases:
   posix: [macosArm64, linuxX64, linuxArm64]

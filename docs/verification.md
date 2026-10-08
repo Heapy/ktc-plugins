@@ -1,5 +1,29 @@
 # Implementation verification
 
+## Catalog export extension (2026-10-08)
+
+Verified on macOS ARM64 with Toolchain 0.13.0 and Kotlin 2.4.20:
+
+- `./kotlin test -m core --platform jvm --platform macosArm64`: all 47 tests
+  passed on each runtime (94 executions), including 12 catalog tests.
+- `./kotlin build -m cli-macos -m cli-linux -m cli-windows -v release`:
+  all four release executables built with `com.akuleshov7:ktoml-core:0.7.1`.
+  Linux and Windows execution remains a CI check.
+- An isolated JVM consumer compiled a function using SQLDelight `SqlDriver`
+  through `$libs.ktc.sql.runtime`, with the emitted flat inline-table shape and
+  double-quoted module/version values. This caught Toolchain 0.13.0 reader
+  differences for TOML subtables and literal strings before the final format.
+- Catalog coverage includes producer resolution in quoted scalars, dependency
+  mapping keys, tagged actions and templates; explicit exports and empty export
+  lists; normalized alias collisions; missing/invalid/unpinned versions; symlink
+  and ignored-file rejection; dry-run, locked restore, update/removal, rollback,
+  multiple plugins, `update --all`, no-op updates, drift protection and CRLF.
+
+Test/build commands needed access beyond the workspace sandbox for installer
+cache locks and Toolchain process inspection. No upstream repository or release
+was changed. The older results below describe the pre-catalog implementation.
+
+
 Recorded on 2026-10-04, macOS ARM64. Toolchain 0.13.0, Kotlin 2.4.20.
 No upstream plugin repository was modified and no release was published.
 

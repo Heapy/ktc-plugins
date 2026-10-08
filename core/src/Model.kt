@@ -70,6 +70,7 @@ fun safeRelative(value: String, allowRoot: Boolean = false): String {
 }
 fun validateDestination(value: String): String {
     safeRelative(value)
+    checkInstall(catalogLocations.none { value.equals(it, ignoreCase = true) || value.lowercase().startsWith("$it/") || it.startsWith(value.lowercase() + "/") }) { "Destination overlaps a consumer catalog: $value" }
     checkInstall(value.split('/').none { it.lowercase() in setOf(".git", ".ktc-plugins") } && value.lowercase() !in setOf(".gitignore", "ktc-plugins.yaml", "ktc-plugins.lock.yaml", "project.yaml", "module.yaml", "ktc-plugins", "ktc-plugins.bat")) { "Reserved destination: $value" }
     return value
 }
@@ -99,10 +100,14 @@ data class Producer(val sha256: String, val plugin: String)
 data class Locked(
     val repository: String, val declarationSha256: String, val commit: String, val sourcePath: String,
     val destination: String, val mode: String, val pluginId: String, val producer: Producer?,
-    val treeSha256: String, val files: Map<String, FileRecord>,
+    val treeSha256: String, val files: Map<String, FileRecord>, val catalog: LockedCatalog? = null,
 ) {
     init {
         validateDestination(destination); safeRelative(sourcePath, true); safeName(pluginId)
+        catalog?.let { c ->
+            val prefix = "ktc-${pluginId.replace('.', '-').replace('_', '-')}-"
+            checkInstall(c.libraries.keys.all { it.startsWith(prefix) }) { "Catalog export does not belong to plugin $pluginId" }
+        }
         checkInstall(mode in setOf("vendored", "downloaded")) { "Invalid lockfile mode" }
         checkInstall(Regex("[0-9a-f]{40}").matches(commit)) { "Invalid locked commit" }
         for (hash in listOf(declarationSha256, treeSha256) + files.values.map { it.sha256 } + listOfNotNull(producer?.sha256)) {
@@ -117,7 +122,7 @@ fun treeDigest(files: Map<String, FileRecord>): String = sha256("ktc-plugins-tre
 fun locks(text: String): Map<String, Locked> = schema(text).required("plugins").map().mapValues { (name, node) ->
     safeName(name)
     val m = node.map()
-    m.keysAllowed("repository", "declarationSha256", "commit", "sourcePath", "destination", "mode", "pluginId", "producer", "treeSha256", "files")
+    m.keysAllowed("repository", "declarationSha256", "commit", "sourcePath", "destination", "mode", "pluginId", "producer", "treeSha256", "files", "catalog")
     val files = m.required("files").map().mapValues { (_, n) ->
         val f = n.map(); f.keysAllowed("sha256", "executable")
         checkInstall(f.text("executable") in setOf("true", "false")) { "Invalid executable flag" }
@@ -128,7 +133,11 @@ fun locks(text: String): Map<String, Locked> = schema(text).required("plugins").
         checkInstall(p.text("path") == "ktc-plugin.yaml") { "Invalid producer metadata path" }
         Producer(p.text("sha256"), safeName(p.text("plugin")))
     }
-    Locked(m.text("repository"), m.text("declarationSha256"), m.text("commit"), m.text("sourcePath"), m.text("destination"), m.text("mode"), m.text("pluginId"), producer, m.text("treeSha256"), files)
+    val catalog = m["catalog"]?.map()?.let { c ->
+        c.keysAllowed("source", "sha256", "file", "libraries")
+        LockedCatalog(c.text("source"), c.text("sha256"), c.required("libraries").map().mapValues { it.value.string() }, c.text("file"))
+    }
+    Locked(m.text("repository"), m.text("declarationSha256"), m.text("commit"), m.text("sourcePath"), m.text("destination"), m.text("mode"), m.text("pluginId"), producer, m.text("treeSha256"), files, catalog)
 }
 fun lockYaml(entries: Map<String, Locked>): String = buildString {
     appendLine("schemaVersion: 1")
@@ -138,6 +147,14 @@ fun lockYaml(entries: Map<String, Locked>): String = buildString {
         appendLine("  ${quote(name)}:")
         for ((key, value) in listOf("repository" to l.repository, "declarationSha256" to l.declarationSha256, "commit" to l.commit, "sourcePath" to l.sourcePath, "destination" to l.destination, "mode" to l.mode, "pluginId" to l.pluginId, "treeSha256" to l.treeSha256)) appendLine("    $key: ${quote(value)}")
         l.producer?.let { appendLine("    producer:\n      path: ktc-plugin.yaml\n      sha256: ${quote(it.sha256)}\n      plugin: ${quote(it.plugin)}") }
+        l.catalog?.let { c ->
+            appendLine("    catalog:")
+            appendLine("      source: ${quote(c.source)}\n      sha256: ${quote(c.sha256)}\n      file: ${quote(c.file)}")
+            if (c.libraries.isEmpty()) appendLine("      libraries: {}") else {
+                appendLine("      libraries:")
+                c.libraries.entries.sortedBy { it.key }.forEach { (alias, coordinates) -> appendLine("        ${quote(alias)}: ${quote(coordinates)}") }
+            }
+        }
         appendLine("    files:")
         l.files.entries.sortedBy { it.key }.forEach { (path, f) -> appendLine("      ${quote(path)}:\n        sha256: ${quote(f.sha256)}\n        executable: ${f.executable}") }
     }

@@ -33,7 +33,8 @@ fun validateProducer(root: Path, selector: String? = null, report: (String) -> U
     }
     for (name in selected) {
         val entry = entries.getValue(name).map()
-        entry.keysAllowed("module", "licenseFiles")
+        entry.keysAllowed("module", "licenseFiles", "catalog")
+        entry["catalog"]?.let { include(catalogSpec(it).file) }
         val source = safeRelative(entry.text("module"), allowRoot = true)
         val folder = if (source == ".") root else contained(root, source)
         checkInstall(fs.metadata(folder).isDirectory) { "Producer module is not a directory: $source" }

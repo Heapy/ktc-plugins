@@ -32,6 +32,23 @@ Client and lockfile schemas remain version 1 and preserve 0.1.0 installations.
 The sections below record the original MVP contract and pinned compatibility audit;
 the 0.2.0 changes above supersede its dry-run and uninstall limitations.
 
+## Catalog contract extension (2026-10-08)
+
+The [producer catalog contract](../README.md#producer-catalogs-and-exported-libraries)
+supersedes the MVP catalog rejection below for producers explicitly declaring
+`catalog.file` and `catalog.export`. Catalog-less producers keep the old rejection.
+Producer aliases are resolved to coordinates in copied configuration; only selected
+consumer libraries are exported under `ktc-<pluginId>-<producerAlias>` aliases.
+Source, catalog and lock updates are transactional. The optional lock `catalog`
+field pins source bytes, resolved exports and the consumer catalog path; old locks
+remain readable, while old installers fail closed on the new field.
+
+TOML parsing uses `com.akuleshov7:ktoml-core:0.7.1` on every target. Consumer edits
+preserve surrounding text and compare parsed content before and after each change.
+Managed blocks provide exact ownership and drift checks. Output is deliberately
+flat `[libraries]` inline tables with double-quoted values, matching the supported
+Toolchain 0.13.0 reader. General module bundles and code rewriting remain out of scope.
+
 ## Implemented MVP status (2026-10-04)
 
 The native shared core, platform entry points, six commands, manifests/lockfile,

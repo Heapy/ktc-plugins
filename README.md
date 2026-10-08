@@ -223,6 +223,81 @@ ignored manifest/license material and reads current working-tree bytes. Outside 
 it examines the selected directory (excluding `.git`). Validation does not prove
 build/runtime compatibility or certify license permissions.
 
+## Producer catalogs and exported libraries
+
+A producer can opt into catalog resolution and explicitly export application libraries:
+
+```yaml
+schemaVersion: 1
+plugins:
+  sqldelight:
+    module: plugins/sqldelight
+    licenseFiles: [LICENSE]
+    catalog:
+      file: gradle/libs.versions.toml
+      export:
+        - sqldelight-runtime
+        - sqldelight-native-driver
+        - sqldelight-coroutines-extensions
+```
+
+`file` is a safe path relative to the producer repository, read at the same locked
+commit as its sources. `export` names exact `[libraries]` keys; use `[]` to resolve
+internal dependencies without exporting anything. `validate` includes this file
+and rejects missing, symlinked or Git-ignored catalogs.
+
+During preparation, `$libs.*` scalar values and mapping keys in `module.yaml`,
+`plugin.yaml` and copied `*.module-template.yaml` files become fixed Maven coordinates
+from the **producer** catalog. YAML comments, scopes, tags and unrelated source files
+are retained. References without `catalog` metadata remain errors; the consumer's
+catalog never supplies plugin compiler versions. Toolchain aliases such as `$kotlin.*`
+remain unchanged.
+
+Supported library entries are `"group:artifact:version"`, `{ module = "group:artifact",
+version = "1.2.3" }`, or `group`/`name` fields, with either a string `version` or
+`version.ref` pointing to a string in `[versions]`. Referenced/exported entries require
+fixed versions. Rich versions, ranges, dynamic versions, versionless dependencies,
+classifiers and packaging suffixes are not supported. Unused library definitions
+need not have supported version specifications. Aliases start with an ASCII letter
+and contain alphanumeric segments separated by `-`, `_` or `.`; escaped TOML keys
+are unsupported. Conflicting normalized accessors fail before changes.
+
+Exports use `ktc-<pluginId>-<producerAlias>`, with dots and underscores changed to
+hyphens. The prefix follows the plugin ID, independently of `--name`. For example:
+
+```toml
+[libraries]
+# ktc-plugins begin sqldelight
+ktc-sqldelight-sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version = "2.3.2" }
+# ktc-plugins end sqldelight
+```
+
+The application explicitly selects dependencies, for example
+`$libs.ktc.sqldelight.sqldelight.runtime`. Exporting a driver only adds a catalog
+entry; it does not add any module dependency. The plugin release and SQLDelight
+version remain independent.
+
+The installer edits the existing `libs.versions.toml` or `gradle/libs.versions.toml`,
+or creates the root file if neither exists. Having both is an error. Existing files
+must use one plain `[libraries]` header (or have no libraries table yet); unsupported
+layouts fail without changes. User entries and comments stay intact. Managed entries
+use flat inline tables and double quotes for Kotlin Toolchain 0.13.0 compatibility.
+
+The lockfile records the producer catalog path/digest, consumer catalog path and
+resolved exports. Source, catalog and lock updates share one transaction and appear
+in `--dry-run`/`diff`. Updates and removal replace/delete only unchanged managed
+blocks; a pre-existing alias is a conflict even if its coordinates match. Separators
+are normalized when detecting collisions. Deleted/edited blocks and moved catalogs
+must be restored before `update`, `sync` or `remove`; `status`/`verify` report drift.
+`sync --offline` restores missing plugin sources using locked exports and the cached
+producer archive without resolving newer versions. Keep the consumer catalog in Git.
+Removal leaves the catalog file and any empty `[libraries]` table in place. Dependency
+references in consumer modules are user-owned and must be removed separately.
+
+Existing manifests and locks without catalogs remain supported. Older installers
+reject the new `catalog` fields; update the consumer launcher before adopting them.
+TOML is parsed using [ktoml-core 0.7.1](https://github.com/orchestr7/ktoml).
+
 ## Cache and platform support
 
 `GITHUB_TOKEN` or `GH_TOKEN` authenticates private repositories/API requests. Tokens
@@ -251,9 +326,9 @@ The installer bounds ZIP input to 64 MiB, expanded content to 128 MiB, each entr
 rejects traversal, case collisions, special files and symlinks in the selected plugin,
 producer manifest or license material; unrelated repository symlinks are not installed.
 
-Plugins using producer `$libs.*` catalogs or external local helper modules/templates
-are rejected. Bundles, catalog relocation, semver selection and local patch merging
-remain outside MVP. Installation does not execute plugin code; subsequent builds do.
+Producer `$libs.*` references require explicit `catalog` metadata as described above.
+External local helper modules/templates, bundles, semver selection and local patch
+merging remain unsupported. Installation does not execute plugin code; subsequent builds do.
 
 ## Verification and distribution
 
