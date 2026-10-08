@@ -175,19 +175,41 @@ private fun validatePortable(payload: Map<String, Payload>) {
         }
         visit(node)
     }
-    val module = parseYaml(payload.getValue("module.yaml").bytes.decodeToString()).map()
-    for (key in listOf("dependencies", "test-dependencies", "apply")) {
-        module.filterKeys { it == key || it.startsWith("$key@") }.values.forEach { list ->
-            list.list().forEach { n ->
-                val value = if (n is com.charleskorn.kaml.YamlScalar) n.content else n.map().keys.single()
-                checkInstall(!value.startsWith("//") && !value.startsWith("../")) { "Plugin has an external local path: $value" }
-                if (key == "apply" || value.startsWith("./")) {
-                    val relative = value.removePrefix("./")
-                    safeRelative(relative)
-                    checkInstall(if (key == "apply") relative in payload else "$relative/module.yaml" in payload) { "Plugin references a missing local file/module: $value" }
-                    checkInstall(key == "apply") { "Local helper modules require bundle support" }
+    val validated = mutableSetOf<String>()
+    val active = mutableSetOf<String>()
+    fun validate(path: String, depth: Int = 0) {
+        checkInstall(depth <= 100) { "$path: Template apply depth exceeds limit" }
+        if (path in validated) return
+        checkInstall(active.add(path)) { "$path: Cyclic template apply" }
+        val module = parseYaml(payload.getValue(path).bytes.decodeToString()).map()
+        for (key in listOf("dependencies", "test-dependencies", "apply")) {
+            module.filterKeys { it == key || it.startsWith("$key@") }.values.forEach { list ->
+                list.list().forEach { n ->
+                    val value = if (n is com.charleskorn.kaml.YamlScalar) n.content else n.map().keys.single()
+                    checkInstall(!value.startsWith('/')) { "$path: Plugin has an external local path: $value" }
+                    if (key == "apply") {
+                        // Toolchain resolves relative paths from the YAML file declaring them.
+                        val parts = path.substringBeforeLast('/', "").split('/').filter(String::isNotEmpty).toMutableList()
+                        checkInstall(value.isNotBlank() && !value.endsWith('/') && value.none { it.code < 32 || it in "\\:*?\"<>|" }) { "$path: Unsafe template path: $value" }
+                        for (part in value.split('/')) when (part) {
+                            "." -> Unit
+                            ".." -> {
+                                checkInstall(parts.isNotEmpty()) { "$path: Plugin has an external local path: $value" }
+                                parts.removeAt(parts.lastIndex)
+                            }
+                            else -> { safeRelative(part); parts += part }
+                        }
+                        val relative = parts.joinToString("/")
+                        checkInstall(relative.endsWith(".module-template.yaml") && relative in payload) { "$path: Plugin references a missing/invalid template: $value" }
+                        validate(relative, depth + 1)
+                    } else {
+                        checkInstall(!value.startsWith('.')) { "$path: Local helper modules require bundle support: $value" }
+                    }
                 }
             }
         }
+        active.remove(path)
+        validated += path
     }
+    validate("module.yaml")
 }
