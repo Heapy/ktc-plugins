@@ -25,6 +25,24 @@ The release also includes executables for direct use and `SHA256SUMS`.
 The checkout launchers are development templates with no release pins;
 use the release assets in consumer projects, or build locally as described below.
 
+## Heapy plugins for Kotlin Toolchain
+
+Each repository includes a `ktc-plugin.yaml` producer manifest for installation with
+`ktc-plugins`.
+
+| Plugin | Purpose |
+| --- | --- |
+| [Binary Compatibility Validator](https://github.com/Heapy/ktc-bcv) | Public JVM API snapshots and compatibility checks |
+| [Benchmark](https://github.com/Heapy/ktc-benchmark) | Benchmarks for JVM/JMH, Kotlin/Native, JavaScript and WebAssembly |
+| [detekt](https://github.com/Heapy/detekt-config) | Static analysis with shared Heapy configuration and rules |
+| [Dokka](https://github.com/Heapy/ktc-dokka) | JVM API documentation |
+| [Jib](https://github.com/Heapy/ktc-jib) | JVM container image building and publication |
+| [Kover](https://github.com/Heapy/ktc-kover) | JVM coverage reports and thresholds |
+| [ktfmt](https://github.com/Heapy/ktc-ktfmt) | Formatting checks and explicit formatting |
+| [ktlint](https://github.com/Heapy/ktc-ktlint) | Lint checks and explicit formatting |
+| [Quarkus](https://github.com/Heapy/ktc-quarkus) | JVM fast-jar and native executable packaging |
+| [SQLDelight](https://github.com/Heapy/ktc-sqldelight) | Code generation and synchronized runtime catalog exports |
+
 ## Build and run locally
 
 The project uses the committed Kotlin Toolchain **0.13.0** wrappers and Kotlin **2.4.20**.
