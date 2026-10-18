@@ -1,10 +1,12 @@
 @echo off
 setlocal DisableDelayedExpansion
-set "ktc_version=0.3.0"
+set "ktc_version=0.3.1"
 if defined KTC_PLUGINS_BINARY goto run
 if not defined KTC_PLUGINS_BINARY_CACHE set "KTC_PLUGINS_BINARY_CACHE=%LOCALAPPDATA%\ktc-plugins\binaries"
 set "KTC_PLUGINS_BINARY=%KTC_PLUGINS_BINARY_CACHE%\%ktc_version%\windows-x64\ktc-plugins-%ktc_version%-windows-x64.exe"
 set "KTC_PLUGINS_WRAPPER=%~f0"
+rem Rebuild Windows PowerShell's module path when called through PowerShell 7.
+set "PSModulePath="
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$t=[IO.File]::ReadAllText($env:KTC_PLUGINS_WRAPPER); & ([scriptblock]::Create($t.Substring($t.LastIndexOf('# POWERSHELL')+12)))"
 if errorlevel 1 exit /b 1
 :run
