@@ -32,15 +32,18 @@ Each repository includes a `ktc-plugin.yaml` producer manifest for installation 
 
 | Plugin | Purpose |
 | --- | --- |
+| [Application](https://github.com/Heapy/ktc-application) | Application distributions with Unix/Windows launchers and reproducible tar/zip archives |
 | [Binary Compatibility Validator](https://github.com/Heapy/ktc-bcv) | Public JVM API snapshots and compatibility checks |
 | [Benchmark](https://github.com/Heapy/ktc-benchmark) | Benchmarks for JVM/JMH, Kotlin/Native, JavaScript and WebAssembly |
 | [detekt](https://github.com/Heapy/detekt-config) | Static analysis with shared Heapy configuration and rules |
 | [Dokka](https://github.com/Heapy/ktc-dokka) | JVM API documentation |
 | [Jib](https://github.com/Heapy/ktc-jib) | JVM container image building and publication |
+| [Kotest](https://github.com/Heapy/ktc-kotest) | Kotest integration for JVM, Kotlin/Native, JavaScript and WebAssembly JS |
 | [Kover](https://github.com/Heapy/ktc-kover) | JVM coverage reports and thresholds |
 | [ktfmt](https://github.com/Heapy/ktc-ktfmt) | Formatting checks and explicit formatting |
 | [ktlint](https://github.com/Heapy/ktc-ktlint) | Lint checks and explicit formatting |
 | [Quarkus](https://github.com/Heapy/ktc-quarkus) | JVM fast-jar and native executable packaging |
+| [Spotless](https://github.com/Heapy/ktc-spotless) | Formatting steps for Kotlin Toolchain with Spotless |
 | [SQLDelight](https://github.com/Heapy/ktc-sqldelight) | Code generation and synchronized runtime catalog exports |
 
 ## Build and run locally
