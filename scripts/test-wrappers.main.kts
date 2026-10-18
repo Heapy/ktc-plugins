@@ -69,7 +69,8 @@ val target = when {
     System.getProperty("os.arch") in setOf("aarch64", "arm64") -> "linux-arm64"
     else -> "linux-x64"
 }
-temporary("ktc wrapper test ") { tmp ->
+for (shell in if (windows) listOf("cmd", "pwsh") else listOf("sh")) temporary("ktc $shell wrapper test ") { tmp ->
+    println("Testing wrapper from $shell")
     val binaries = tmp.resolve("input").apply { mkdir() }
     for (platform in listOf("macos-arm64", "linux-x64", "linux-arm64", "windows-x64")) {
         binary.copyTo(binaries.resolve("ktc-plugins-$version-$platform" + if (platform == "windows-x64") ".exe" else ""))
@@ -87,7 +88,16 @@ temporary("ktc wrapper test ") { tmp ->
     if (!windows) check(cachedBinary.setExecutable(true, false))
     val environment = mutableMapOf<String, String?>("KTC_PLUGINS_BINARY_CACHE" to tmp.resolve("offline binary cache").path, "KTC_PLUGINS_BINARY" to null)
     val wrapper = output.resolve(if (windows) "ktc-plugins.bat" else "ktc-plugins").path
-    fun run(vararg arguments: String) = command(tmp, if (windows) batch(wrapper, arguments.toList()) else listOf(wrapper) + arguments, environment)
+    fun run(vararg arguments: String): CommandResult {
+        val invocation = when (shell) {
+            "cmd" -> batch(wrapper, arguments.toList())
+            // Keep PowerShell 7's real environment when it starts the batch wrapper.
+            "pwsh" -> listOf("pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                "& " + (listOf(wrapper) + arguments).joinToString(" ") { "'${it.replace("'", "''")}'" } + "; exit \$LASTEXITCODE")
+            else -> listOf(wrapper) + arguments
+        }
+        return command(tmp, invocation, environment)
+    }
     fun concurrentVersions() {
         java.util.concurrent.Executors.newFixedThreadPool(4).use { pool ->
             val futures = (1..4).map { pool.submit<CommandResult> { run("--version") } }
