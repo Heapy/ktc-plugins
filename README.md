@@ -6,16 +6,16 @@ installs a self-contained plugin module, and registers it in your project.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and compatibility notes.
 
-## Get version 0.3.0
+## Get version 0.3.1
 
-Download the generated launchers from the [0.3.0 release](https://github.com/Heapy/ktc-plugins/releases/tag/v0.3.0)
+Download the generated launchers from the [0.3.1 release](https://github.com/Heapy/ktc-plugins/releases/tag/v0.3.1)
 into your consumer project and commit them:
 
 ```sh
 curl --fail --location --output ktc-plugins \
-  https://github.com/Heapy/ktc-plugins/releases/download/v0.3.0/ktc-plugins
+  https://github.com/Heapy/ktc-plugins/releases/download/v0.3.1/ktc-plugins
 curl --fail --location --output ktc-plugins.bat \
-  https://github.com/Heapy/ktc-plugins/releases/download/v0.3.0/ktc-plugins.bat
+  https://github.com/Heapy/ktc-plugins/releases/download/v0.3.1/ktc-plugins.bat
 chmod +x ktc-plugins
 ./ktc-plugins --help
 ```
@@ -154,8 +154,8 @@ The installer changes no Git index entries; commit vendored deletions yourself.
 ## Update project launchers
 
 ```sh
-./ktc-plugins wrapper update --version 0.3.0 --dry-run
-./ktc-plugins wrapper update --version 0.3.0
+./ktc-plugins wrapper update --version 0.3.1 --dry-run
+./ktc-plugins wrapper update --version 0.3.1
 ```
 
 Choose an exact **published stable** version. The updater verifies GitHub asset digests,
@@ -364,10 +364,10 @@ merging remain unsupported. Installation does not execute plugin code; subsequen
 ./kotlin test -m core --platform jvm --platform macosArm64
 ./kotlin build -m cli-macos -m cli-linux -m cli-windows -v release
 kotlinr scripts/stage-binaries.main.kts macosArm64 linuxX64 linuxArm64 mingwX64
-kotlinr scripts/package-release.main.kts --version 0.3.0 \
+kotlinr scripts/package-release.main.kts --version 0.3.1 \
   --binaries build/binaries --output build/release
-kotlinr scripts/smoke.main.kts build/binaries/ktc-plugins-0.3.0-macos-arm64
-kotlinr scripts/test-wrappers.main.kts build/binaries/ktc-plugins-0.3.0-macos-arm64
+kotlinr scripts/smoke.main.kts build/binaries/ktc-plugins-0.3.1-macos-arm64
+kotlinr scripts/test-wrappers.main.kts build/binaries/ktc-plugins-0.3.1-macos-arm64
 ```
 
 Cross-compilation requires a supported Toolchain compiler host. Build individual

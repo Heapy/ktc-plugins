@@ -5,6 +5,22 @@ separately from tagged releases.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-18
+
+### Fixed
+
+- Windows wrapper bootstrap clears the inherited `PSModulePath` before starting
+  Windows PowerShell, so launches from PowerShell 7 can resolve `Get-FileHash`
+  and verify the downloaded or cached executable. The change is local to the wrapper.
+- Windows wrapper tests run through both `cmd.exe` and `pwsh`, covering cached
+  launches, argument forwarding, empty-cache downloads, concurrent bootstrap and
+  corrupt-download rejection.
+
+### Compatibility
+
+- CLI commands, plugin manifests and lockfiles are unchanged. Update both consumer
+  launchers to receive the Windows bootstrap fix.
+
 ## [0.3.0] - 2026-10-08
 
 ### Changed
@@ -97,7 +113,8 @@ separately from tagged releases.
 - Unix and Windows launchers with pinned SHA-256 verification, native release
   binaries, checksums and CI checks across all four runtime targets.
 
-[Unreleased]: https://github.com/Heapy/ktc-plugins/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Heapy/ktc-plugins/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Heapy/ktc-plugins/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Heapy/ktc-plugins/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Heapy/ktc-plugins/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Heapy/ktc-plugins/releases/tag/v0.1.0
