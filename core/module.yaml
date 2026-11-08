@@ -4,7 +4,7 @@ product:
 
 dependencies:
   - com.squareup.okio:okio:3.18.2
-  - io.heapy.kotaml:kotaml:0.111.0
+  - io.heapy.kotaml:kotaml:0.113.0
   - com.akuleshov7:ktoml-core:0.7.1
 
 aliases:
@@ -12,4 +12,4 @@ aliases:
 
 settings:
   kotlin:
-    version: 2.4.20
+    version: 2.4.21

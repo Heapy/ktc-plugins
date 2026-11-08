@@ -5,6 +5,14 @@ separately from tagged releases.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-08
+
+### Changed
+
+- Update Kotaml from 0.111.0 to 0.113.0 for YAML manifest and lockfile parsing.
+- Align the compiler with Kotlin 2.4.21 used by Kotaml.
+- CLI commands, producer descriptors and consumer lockfile formats are unchanged.
+
 ## [0.3.1] - 2026-10-18
 
 ### Fixed
