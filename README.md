@@ -36,7 +36,7 @@ Each repository includes a `ktc-plugin.yaml` producer manifest for installation 
 | [Binary Compatibility Validator](https://github.com/Heapy/ktc-bcv) | Public JVM API snapshots and compatibility checks |
 | [Benchmark](https://github.com/Heapy/ktc-benchmark) | Benchmarks for JVM/JMH, Kotlin/Native, JavaScript and WebAssembly |
 | [detekt](https://github.com/Heapy/detekt-config) | Static analysis with shared Heapy configuration and rules |
-| [Dokka](https://github.com/Heapy/ktc-dokka) | JVM API documentation |
+| [Dokka](https://github.com/Heapy/ktc-dokka) | JVM, Android and Kotlin Multiplatform API documentation and Javadoc archives with Dokka 2.3.0 |
 | [Jib](https://github.com/Heapy/ktc-jib) | JVM container image building and publication |
 | [Kotest](https://github.com/Heapy/ktc-kotest) | Kotest integration for JVM, Kotlin/Native, JavaScript and WebAssembly JS |
 | [Kover](https://github.com/Heapy/ktc-kover) | JVM coverage reports and thresholds |
